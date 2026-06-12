@@ -502,6 +502,58 @@ function scheduleAllNotifications() {
   reminders.forEach(r => scheduleNotification(r));
 }
 
+// =====================================================
+//  IN-APP NOTIFICATION — garante entrega em qualquer máquina
+// =====================================================
+
+let inappCurrentId = null;
+let inappAutoClose = null;
+
+function showInAppNotif(id, title, body) {
+  inappCurrentId = id;
+  document.getElementById('inapp-title').textContent = title;
+  document.getElementById('inapp-body').textContent  = body;
+
+  const panel = document.getElementById('inapp-notif');
+  panel.classList.remove('hiding');
+  panel.style.display = 'block';
+
+  // Barra de progresso — fecha automaticamente em 12s
+  const bar = document.getElementById('inapp-progress');
+  bar.style.transition = 'none';
+  bar.style.width = '100%';
+  clearTimeout(inappAutoClose);
+
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    bar.style.transition = 'width 12s linear';
+    bar.style.width = '0%';
+  }));
+
+  inappAutoClose = setTimeout(() => closeInAppNotif(), 12000);
+}
+
+function closeInAppNotif() {
+  clearTimeout(inappAutoClose);
+  const panel = document.getElementById('inapp-notif');
+  panel.classList.add('hiding');
+  setTimeout(() => { panel.style.display = 'none'; panel.classList.remove('hiding'); }, 300);
+  inappCurrentId = null;
+}
+
+async function inappMarkDone() {
+  if (inappCurrentId) await toggleDone(inappCurrentId);
+  closeInAppNotif();
+}
+
+function inappSnooze() {
+  const r = reminders.find(x => x.id === inappCurrentId);
+  closeInAppNotif();
+  if (!r) return;
+  const delay = 10 * 60 * 1000;
+  setTimeout(() => { showInAppNotif(r.id, r.title, r.desc || 'Hora do seu lembrete!'); playSound(r.sound); }, delay);
+  showToast('⏰ Adiado', r.title + ' — em 10 minutos');
+}
+
 function scheduleNotification(r) {
   if (r.done || !r.date || !r.time) return;
 
@@ -511,27 +563,29 @@ function scheduleNotification(r) {
 
   if (delay <= 0) return;
 
-  // Envia para o Service Worker (funciona em background)
+  // 1. Service Worker — notificação nativa em background
   if (swReg?.active && Notification.permission === 'granted') {
-    swReg.active.postMessage({
-      type: 'SCHEDULE',
-      id:    r.id,
-      title: r.title,
-      body:  r.desc || 'Hora do seu lembrete!',
-      delay
-    });
+    swReg.active.postMessage({ type:'SCHEDULE', id:r.id, title:r.title, body:r.desc||'Hora do seu lembrete!', delay });
   }
 
-  // Fallback: setTimeout + som (funciona apenas com aba aberta)
+  // 2. setTimeout — garante disparo com aba aberta (independe de permissão)
   setTimeout(() => {
-    if (Notification.permission === 'granted') {
-      new Notification('RemindMe: ' + r.title, {
-        body: r.desc || 'Hora do seu lembrete!',
-        icon: '/public/icons/icon-192.png',
-        tag:  'reminder-' + r.id,
-      });
+    const body = r.desc || 'Hora do seu lembrete!';
+
+    // Notificação nativa (se tiver permissão)
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification('Nexo: ' + r.title, {
+          body, icon:'/public/icons/icon-192.png',
+          tag:'reminder-' + r.id, requireInteraction: true
+        });
+      } catch(e) {}
     }
-    showToast('🔔 ' + r.title, r.desc || 'Hora do seu lembrete!');
+
+    // Painel in-app — SEMPRE dispara independente de permissão ou sistema
+    showInAppNotif(r.id, r.title, body);
+
+    // Som
     playSound(r.sound);
   }, Math.max(delay, 0));
 }
@@ -575,5 +629,6 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
 
 
