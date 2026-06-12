@@ -279,18 +279,35 @@
 
   <!-- COMPLETE PROFILE MODAL (Google first login) -->
   <div class="modal-overlay" id="complete-profile-modal">
-    <div class="modal" style="max-width:380px">
+    <div class="modal" style="max-width:400px">
       <div class="modal-title"><span>Quase lá! 🎉</span></div>
+
+      <!-- Avatar + dados Google -->
       <div style="text-align:center;margin-bottom:20px">
         <div class="avatar" id="complete-avatar" style="width:56px;height:56px;font-size:22px;margin:0 auto 10px"></div>
         <div style="font-size:15px;font-weight:500" id="complete-name"></div>
         <div style="font-size:12px;color:var(--text3)" id="complete-email"></div>
         <div style="font-size:12px;color:var(--success);margin-top:6px">✓ Conta criada com Google</div>
       </div>
-      <p style="font-size:13px;color:var(--text2);margin-bottom:16px;text-align:center">
-        Adicione uma senha para poder entrar também com e-mail e senha.
-      </p>
+
+      <!-- Aviso senha padrão -->
+      <div style="background:rgba(245,166,35,0.10);border:1px solid var(--warning);border-radius:10px;padding:14px 16px;margin-bottom:18px">
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <span style="font-size:18px;flex-shrink:0">🔐</span>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--warning);margin-bottom:4px">Senha padrão definida</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.6">
+              Sua senha temporária é <code style="background:var(--bg3);color:var(--text1);padding:2px 8px;border-radius:5px;font-size:12px;letter-spacing:0.05em">mudar123</code>
+            </div>
+            <div style="font-size:11px;color:var(--warning);margin-top:6px;display:flex;align-items:center;gap:4px">
+              ⚠️ Por segurança, troque para uma senha pessoal agora.
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="complete-profile-error" class="auth-error" style="display:none"></div>
+
       <div class="form-group">
         <label class="form-label">Nova senha</label>
         <div style="position:relative">
@@ -299,12 +316,13 @@
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Confirmar senha</label>
+        <label class="form-label">Confirmar nova senha</label>
         <input class="form-input" type="password" id="complete-password2" placeholder="Repita a senha">
       </div>
+
       <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-ghost" style="flex:1" onclick="skipCompleteProfile()">Pular por agora</button>
-        <button class="btn btn-primary" style="flex:1" onclick="saveCompleteProfile()" id="complete-save-btn"><i class="ti ti-check"></i> Salvar senha</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="skipCompleteProfile()">Usar padrão por agora</button>
+        <button class="btn btn-primary" style="flex:1" onclick="saveCompleteProfile()" id="complete-save-btn"><i class="ti ti-lock"></i> Salvar senha</button>
       </div>
     </div>
   </div>
@@ -315,6 +333,7 @@
   <script src="public/js/app.js"></script>
 </body>
 </html>
+
 
 
 
