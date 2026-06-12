@@ -132,6 +132,7 @@ async function checkOverdueReminders() {
   const now = new Date();
   for (const r of reminders) {
     if (r.done || !r.date || !r.time) continue;
+    if (snoozedIds.has(r.id)) continue; // está adiado, não marcar como feito
     const dt = new Date(r.date + 'T' + r.time);
     // Se passou mais de 1 minuto do horário e não está feito
     if ((now - dt) > 60000) {
@@ -508,6 +509,7 @@ function scheduleAllNotifications() {
 
 let inappCurrentId = null;
 let inappAutoClose = null;
+const snoozedIds = new Set(); // IDs adiados — não marcar como feito automaticamente
 
 function showInAppNotif(id, title, body) {
   inappCurrentId = id;
@@ -553,7 +555,12 @@ function inappSnooze() {
   if (!r) { showToast('Erro', 'Lembrete não encontrado.'); return; }
 
   const delay = 10 * 60 * 1000; // 10 minutos
+
+  // Protege o lembrete do auto-check durante o snooze
+  snoozedIds.add(r.id);
+
   setTimeout(() => {
+    snoozedIds.delete(r.id); // libera proteção
     showInAppNotif(r.id, r.title, r.desc || 'Hora do seu lembrete!');
     playSound(r.sound);
   }, delay);
@@ -636,6 +643,7 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
 
 
 
