@@ -4,24 +4,31 @@
 
 let currentUser = null;
 
-// Verifica sessão ao carregar
+// Verifica sessão e eventos de auth
 sb.auth.onAuthStateChange(async (event, session) => {
   if (session?.user) {
     currentUser = session.user;
+
+    // Fluxo de reset de senha — abre modal para nova senha
+    if (event === 'PASSWORD_RECOVERY') {
+      showAuth();
+      openResetPasswordModal();
+      return;
+    }
+
     await showApp();
 
-    // Detecta primeiro login com Google → abre painel de senha
+    // Primeiro login com Google → abre painel de senha
     if (event === 'SIGNED_IN') {
       const provider  = currentUser.app_metadata?.provider || '';
       const createdAt = new Date(currentUser.created_at).getTime();
-      const now       = Date.now();
-      const isNew     = (now - createdAt) < 30000; // criado há menos de 30s
-      const hasPassword = currentUser.identities?.some(i => i.provider === 'email');
-
-      if (provider === 'google' && isNew && !hasPassword) {
+      const isNew     = (Date.now() - createdAt) < 30000;
+      const hasPass   = currentUser.identities?.some(i => i.provider === 'email');
+      if (provider === 'google' && isNew && !hasPass) {
         openCompleteProfileModal();
       }
     }
+
   } else {
     currentUser = null;
     showAuth();
@@ -49,20 +56,18 @@ async function loginEmail() {
   if (!email || !password) return showAuthError('Preencha e-mail e senha.');
 
   const { error } = await sb.auth.signInWithPassword({ email, password });
-
   if (error) {
-    if (error.message === 'Invalid login credentials') {
-      return showAuthError(
-        'E-mail ou senha incorretos. Se você entrou com Google antes, use o botão "Continuar com Google".',
-        'warning'
-      );
-    }
+    if (error.message === 'Invalid login credentials')
+      return showAuthError('E-mail ou senha incorretos. Se você entrou com Google antes, use "Continuar com Google".', 'warning');
+    if (error.message === 'Email not confirmed')
+      return showAuthError('Confirme seu e-mail antes de entrar. Verifique sua caixa de entrada.', 'warning');
     return showAuthError(translateError(error.message));
   }
 }
 
 // --------------------------------------------------
 //  Registro com e-mail e senha
+//  Só cria no banco após confirmação do e-mail
 // --------------------------------------------------
 async function registerEmail() {
   const name     = document.getElementById('reg-name').value.trim();
@@ -70,25 +75,30 @@ async function registerEmail() {
   const password = document.getElementById('reg-password').value;
 
   if (!name || !email || !password) return showAuthError('Preencha todos os campos.');
-  if (password.length < 6) return showAuthError('A senha precisa ter pelo menos 6 caracteres.');
+  if (!isValidEmail(email)) return showAuthError('Digite um e-mail válido.');
+  if (password.length < 6)  return showAuthError('A senha precisa ter pelo menos 6 caracteres.');
+
+  const btn = document.querySelector('#tab-register .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
 
   const { error } = await sb.auth.signUp({
     email,
     password,
-    options: { data: { full_name: name } }
+    options: {
+      data: { full_name: name },
+      emailRedirectTo: window.location.origin
+    }
   });
 
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-user-plus"></i> Criar conta'; }
+
   if (error) {
-    if (error.message === 'User already registered') {
-      return showAuthError(
-        'Este e-mail já está cadastrado. Tente entrar com sua senha ou use "Continuar com Google".',
-        'warning'
-      );
-    }
+    if (error.message === 'User already registered')
+      return showAuthError('Este e-mail já está cadastrado. Tente entrar ou use "Continuar com Google".', 'warning');
     return showAuthError(translateError(error.message));
   }
 
-  showAuthError('Verifique seu e-mail para confirmar o cadastro!', 'success');
+  showAuthError('📧 E-mail de confirmação enviado! Verifique sua caixa de entrada e clique no link para ativar sua conta.', 'success');
 }
 
 // --------------------------------------------------
@@ -107,24 +117,58 @@ async function loginGoogle() {
 // --------------------------------------------------
 async function forgotPassword() {
   const email = document.getElementById('login-email').value.trim();
-  if (!email) return showAuthError('Digite seu e-mail no campo acima.');
+  if (!email)              return showAuthError('Digite seu e-mail no campo acima.');
+  if (!isValidEmail(email)) return showAuthError('Digite um e-mail válido.');
 
   const { error } = await sb.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin + '?reset=true'
+    redirectTo: window.location.origin
   });
 
   if (error) {
-    if (error.message?.toLowerCase().includes('not found') ||
-        error.message?.toLowerCase().includes('user not found')) {
-      return showAuthError(
-        'Este e-mail está vinculado ao Google. Use o botão "Continuar com Google" para entrar.',
-        'warning'
-      );
-    }
+    if (error.message?.toLowerCase().includes('not found'))
+      return showAuthError('Este e-mail está vinculado ao Google. Use "Continuar com Google".', 'warning');
     return showAuthError(translateError(error.message));
   }
 
-  showAuthError('Link enviado para ' + email + '. Verifique sua caixa de entrada.', 'success');
+  showAuthError('📧 Link de redefinição enviado para ' + email + '. Verifique sua caixa de entrada.', 'success');
+}
+
+// --------------------------------------------------
+//  Modal de redefinição de senha (após clicar no link)
+// --------------------------------------------------
+function openResetPasswordModal() {
+  document.getElementById('reset-password-modal').classList.add('show');
+}
+
+async function saveNewPassword() {
+  const pass  = document.getElementById('reset-password-input').value;
+  const pass2 = document.getElementById('reset-password-input2').value;
+  const errEl = document.getElementById('reset-password-error');
+  errEl.style.display = 'none';
+
+  if (!pass)             return showResetError('Digite uma nova senha.');
+  if (pass.length < 6)   return showResetError('A senha deve ter pelo menos 6 caracteres.');
+  if (pass !== pass2)    return showResetError('As senhas não coincidem.');
+
+  const btn = document.getElementById('reset-save-btn');
+  btn.disabled = true;
+
+  const { error } = await sb.auth.updateUser({ password: pass });
+  btn.disabled = false;
+
+  if (error) return showResetError('Erro ao salvar: ' + error.message);
+
+  document.getElementById('reset-password-modal').classList.remove('show');
+  showToast('✅ Senha redefinida!', 'Sua nova senha foi salva com sucesso.');
+}
+
+function showResetError(msg) {
+  const el = document.getElementById('reset-password-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.background  = 'rgba(226,75,74,0.12)';
+  el.style.borderColor = 'var(--danger)';
+  el.style.color       = 'var(--danger)';
 }
 
 // --------------------------------------------------
@@ -168,112 +212,87 @@ async function showApp() {
 }
 
 // --------------------------------------------------
-//  PAINEL "Completar perfil" — Google first login
+//  Painel "Completar perfil" — Google first login
 // --------------------------------------------------
 function openCompleteProfileModal() {
   const meta     = currentUser.user_metadata || {};
   const name     = meta.full_name || meta.name || currentUser.email.split('@')[0];
-  const email    = currentUser.email;
   const initials = name.slice(0, 2).toUpperCase();
-
   document.getElementById('complete-avatar').textContent = initials;
   document.getElementById('complete-name').textContent   = name;
-  document.getElementById('complete-email').textContent  = email;
+  document.getElementById('complete-email').textContent  = currentUser.email;
   document.getElementById('complete-password').value     = '';
   document.getElementById('complete-password2').value    = '';
   document.getElementById('complete-profile-error').style.display = 'none';
   document.getElementById('complete-profile-modal').classList.add('show');
 }
 
-function closeCompleteProfileModal() {
-  document.getElementById('complete-profile-modal').classList.remove('show');
-}
-
 function skipCompleteProfile() {
-  closeCompleteProfileModal();
+  document.getElementById('complete-profile-modal').classList.remove('show');
   showToast('Tudo certo!', 'Você pode adicionar uma senha depois nas configurações.');
 }
 
 async function saveCompleteProfile() {
   const pass  = document.getElementById('complete-password').value;
   const pass2 = document.getElementById('complete-password2').value;
-  const errEl = document.getElementById('complete-profile-error');
-
-  errEl.style.display = 'none';
-
-  if (!pass) return showCompleteError('Digite uma senha.');
+  if (!pass)           return showCompleteError('Digite uma senha.');
   if (pass.length < 6) return showCompleteError('A senha deve ter pelo menos 6 caracteres.');
   if (pass !== pass2)  return showCompleteError('As senhas não coincidem.');
 
   const btn = document.getElementById('complete-save-btn');
   btn.disabled = true;
-
   const { error } = await sb.auth.updateUser({ password: pass });
-
   btn.disabled = false;
 
   if (error) return showCompleteError('Erro ao salvar senha: ' + error.message);
-
-  closeCompleteProfileModal();
-  showToast('Senha criada com sucesso!', 'Agora você pode entrar com e-mail e senha também.');
+  document.getElementById('complete-profile-modal').classList.remove('show');
+  showToast('Senha criada!', 'Agora você pode entrar com e-mail e senha também.');
 }
 
 function showCompleteError(msg) {
   const el = document.getElementById('complete-profile-error');
-  el.textContent   = msg;
-  el.style.display = 'block';
-  el.style.background  = 'rgba(226,75,74,0.12)';
+  el.textContent = msg; el.style.display = 'block';
+  el.style.background = 'rgba(226,75,74,0.12)';
   el.style.borderColor = 'var(--danger)';
-  el.style.color       = 'var(--danger)';
+  el.style.color = 'var(--danger)';
 }
 
 function togglePassVis(inputId, iconId) {
   const input = document.getElementById(inputId);
   const icon  = document.getElementById(iconId);
-  if (input.type === 'password') {
-    input.type = 'text';
-    icon.innerHTML = '<i class="ti ti-eye-off"></i>';
-  } else {
-    input.type = 'password';
-    icon.innerHTML = '<i class="ti ti-eye"></i>';
-  }
+  input.type = input.type === 'password' ? 'text' : 'password';
+  icon.innerHTML = input.type === 'password' ? '<i class="ti ti-eye"></i>' : '<i class="ti ti-eye-off"></i>';
 }
 
 // --------------------------------------------------
-//  Helpers de mensagem
+//  Helpers
 // --------------------------------------------------
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 function showAuthError(msg, type = 'error') {
   const el = document.getElementById('auth-error');
-  el.textContent = msg;
-  el.style.display = 'block';
-  const styles = {
+  el.textContent = msg; el.style.display = 'block';
+  const s = {
     error:   { bg:'rgba(226,75,74,0.12)',  border:'var(--danger)',  color:'var(--danger)'  },
     warning: { bg:'rgba(245,166,35,0.12)', border:'var(--warning)', color:'var(--warning)' },
     success: { bg:'rgba(34,201,122,0.12)', border:'var(--success)', color:'var(--success)' },
-  };
-  const s = styles[type] || styles.error;
-  el.style.background  = s.bg;
-  el.style.borderColor = s.border;
-  el.style.color       = s.color;
+  }[type] || {};
+  el.style.background = s.bg; el.style.borderColor = s.border; el.style.color = s.color;
 }
 
-function hideAuthError() {
-  document.getElementById('auth-error').style.display = 'none';
-}
+function hideAuthError() { document.getElementById('auth-error').style.display = 'none'; }
 
 function translateError(msg) {
-  const map = {
+  return {
     'Invalid login credentials':               'E-mail ou senha incorretos.',
     'Email not confirmed':                     'Confirme seu e-mail antes de entrar.',
     'User already registered':                 'Este e-mail já está cadastrado.',
     'Password should be at least 6 characters':'A senha deve ter ao menos 6 caracteres.',
     'Email rate limit exceeded':               'Muitas tentativas. Aguarde alguns minutos.',
-  };
-  return map[msg] || msg;
+  }[msg] || msg;
 }
 
-// --------------------------------------------------
-//  Modal de perfil
-// --------------------------------------------------
 function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
