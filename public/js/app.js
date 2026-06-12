@@ -536,11 +536,25 @@ function scheduleNotification(r) {
   }, Math.max(delay, 0));
 }
 
-function playSound(type) {
+function playSound(type, repeat = 3) {
+  if (type === 'silencioso') return;
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx   = new (window.AudioContext || window.webkitAudioContext)();
     const sound = SOUNDS[type] || SOUNDS['padrão'];
-    sound.play(ctx);
+    // Calcula a duração de cada repetição com base no tipo
+    const durations = { padrão:0.9, suave:1.1, urgente:0.8, campanha:1.1, digital:0.5, melodia:1.2, ping:0.7 };
+    const dur = durations[type] || 1.0;
+    const gap = 0.3; // pausa entre repetições
+
+    for (let i = 0; i < repeat; i++) {
+      const offset = i * (dur + gap);
+      setTimeout(() => {
+        try {
+          const c = new (window.AudioContext || window.webkitAudioContext)();
+          sound.play(c);
+        } catch(e) {}
+      }, offset * 1000);
+    }
   } catch(e) {}
 }
 
@@ -561,4 +575,5 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
 
