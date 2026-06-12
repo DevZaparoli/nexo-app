@@ -194,12 +194,16 @@
         <div class="form-group"><label class="form-label">Terminar em (opcional)</label><input class="form-input" type="date" id="f-repeat-end"></div>
       </div>
       <div id="tab-som" style="display:none">
-        <div class="form-group"><label class="form-label">Som da notificação</label>
-          <div class="sound-row" id="sound-chips">
-            <div class="sound-chip active" onclick="selectSound('padrão',this)">Padrão</div>
-            <div class="sound-chip" onclick="selectSound('suave',this)">Suave</div>
-            <div class="sound-chip" onclick="selectSound('urgente',this)">Urgente</div>
-            <div class="sound-chip" onclick="selectSound('silencioso',this)">Silencioso</div>
+        <div class="form-group"><label class="form-label">Som da notificação <span style="font-size:11px;color:var(--text3)">(clique para ouvir)</span></label>
+          <div class="sound-grid" id="sound-chips">
+            <div class="sound-chip" data-sound="padrão"     onclick="selectSound('padrão',this)">🔔 Padrão</div>
+            <div class="sound-chip" data-sound="suave"      onclick="selectSound('suave',this)">🎵 Suave</div>
+            <div class="sound-chip" data-sound="urgente"    onclick="selectSound('urgente',this)">🚨 Urgente</div>
+            <div class="sound-chip" data-sound="campanha"   onclick="selectSound('campanha',this)">🔕 Campainha</div>
+            <div class="sound-chip" data-sound="digital"    onclick="selectSound('digital',this)">💻 Digital</div>
+            <div class="sound-chip" data-sound="melodia"    onclick="selectSound('melodia',this)">🎶 Melodia</div>
+            <div class="sound-chip" data-sound="ping"       onclick="selectSound('ping',this)">📍 Ping</div>
+            <div class="sound-chip" data-sound="silencioso" onclick="selectSound('silencioso',this)">🔇 Silencioso</div>
           </div>
         </div>
         <div class="form-group"><label class="form-label">Notificar com antecedência</label>
@@ -251,3 +255,4 @@
   <script src="public/js/app.js"></script>
 </body>
 </html>
+
