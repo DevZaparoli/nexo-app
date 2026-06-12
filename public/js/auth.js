@@ -227,9 +227,11 @@ function openCompleteProfileModal() {
   document.getElementById('complete-profile-modal').classList.add('show');
 }
 
-function skipCompleteProfile() {
+async function skipCompleteProfile() {
+  // Define a senha padrão silenciosamente para o usuário poder logar com email também
+  await sb.auth.updateUser({ password: 'mudar123' });
   document.getElementById('complete-profile-modal').classList.remove('show');
-  showToast('Tudo certo!', 'Você pode adicionar uma senha depois nas configurações.');
+  showToast('⚠️ Lembrete de segurança', 'Sua senha padrão é mudar123. Troque assim que possível!');
 }
 
 async function saveCompleteProfile() {
@@ -296,3 +298,4 @@ function translateError(msg) {
 
 function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
+
