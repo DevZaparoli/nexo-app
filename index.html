@@ -250,6 +250,33 @@
   </div>
 
 
+
+  <!-- RESET PASSWORD MODAL -->
+  <div class="modal-overlay" id="reset-password-modal">
+    <div class="modal" style="max-width:380px">
+      <div class="modal-title"><span>🔑 Nova senha</span></div>
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="width:56px;height:56px;background:rgba(245,166,35,0.12);border-radius:50%;font-size:26px;line-height:56px;text-align:center;margin:0 auto 10px">🔑</div>
+        <p style="font-size:13px;color:var(--text2);margin:0">Digite sua nova senha abaixo.</p>
+      </div>
+      <div id="reset-password-error" class="auth-error" style="display:none"></div>
+      <div class="form-group">
+        <label class="form-label">Nova senha</label>
+        <div style="position:relative">
+          <input class="form-input" type="password" id="reset-password-input" placeholder="Mínimo 6 caracteres" style="padding-right:40px">
+          <span onclick="togglePassVis('reset-password-input','reset-eye')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text3)" id="reset-eye"><i class="ti ti-eye"></i></span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmar nova senha</label>
+        <input class="form-input" type="password" id="reset-password-input2" placeholder="Repita a senha">
+      </div>
+      <button class="btn btn-primary w-full" onclick="saveNewPassword()" id="reset-save-btn" style="margin-top:8px">
+        <i class="ti ti-check"></i> Salvar nova senha
+      </button>
+    </div>
+  </div>
+
   <!-- COMPLETE PROFILE MODAL (Google first login) -->
   <div class="modal-overlay" id="complete-profile-modal">
     <div class="modal" style="max-width:380px">
@@ -288,6 +315,7 @@
   <script src="public/js/app.js"></script>
 </body>
 </html>
+
 
 
 
