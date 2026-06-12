@@ -546,12 +546,19 @@ async function inappMarkDone() {
 }
 
 function inappSnooze() {
-  const r = reminders.find(x => x.id === inappCurrentId);
+  // Salva referências ANTES de fechar (closeInAppNotif limpa inappCurrentId)
+  const savedId = inappCurrentId;
+  const r = reminders.find(x => x.id === savedId);
   closeInAppNotif();
-  if (!r) return;
-  const delay = 10 * 60 * 1000;
-  setTimeout(() => { showInAppNotif(r.id, r.title, r.desc || 'Hora do seu lembrete!'); playSound(r.sound); }, delay);
-  showToast('⏰ Adiado', r.title + ' — em 10 minutos');
+  if (!r) { showToast('Erro', 'Lembrete não encontrado.'); return; }
+
+  const delay = 10 * 60 * 1000; // 10 minutos
+  setTimeout(() => {
+    showInAppNotif(r.id, r.title, r.desc || 'Hora do seu lembrete!');
+    playSound(r.sound);
+  }, delay);
+
+  showToast('⏰ Adiado por 10 minutos', r.title);
 }
 
 function scheduleNotification(r) {
@@ -629,6 +636,7 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
 
 
 
