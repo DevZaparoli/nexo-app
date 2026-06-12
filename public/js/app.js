@@ -389,12 +389,93 @@ function toggleWeekdays() {
 function selectSound(s, el) {
   selectedSound = s;
   updateSoundChips();
+  playSound(s); // toca prévia imediatamente
 }
 
 function updateSoundChips() {
   document.querySelectorAll('.sound-chip').forEach(el => {
-    el.classList.toggle('active', el.textContent.toLowerCase() === selectedSound);
+    const val = el.dataset.sound;
+    el.classList.toggle('active', val === selectedSound);
   });
+}
+
+// =====================================================
+//  SONS — definições completas
+// =====================================================
+const SOUNDS = {
+  padrão: {
+    label: '🔔 Padrão',
+    play: (ctx) => {
+      const seq = [520, 440, 480];
+      playTones(ctx, seq, 0.18, 0.3);
+    }
+  },
+  suave: {
+    label: '🎵 Suave',
+    play: (ctx) => {
+      const seq = [360, 380, 400, 380];
+      playTones(ctx, seq, 0.22, 0.18, 'sine');
+    }
+  },
+  urgente: {
+    label: '🚨 Urgente',
+    play: (ctx) => {
+      const seq = [880, 660, 880, 660, 880];
+      playTones(ctx, seq, 0.12, 0.4, 'square');
+    }
+  },
+  campanha: {
+    label: '🔕 Campainha',
+    play: (ctx) => {
+      const seq = [600, 550, 600, 550, 600, 800];
+      playTones(ctx, seq, 0.14, 0.25, 'triangle');
+    }
+  },
+  digital: {
+    label: '💻 Digital',
+    play: (ctx) => {
+      const seq = [1000, 800, 1000];
+      playTones(ctx, seq, 0.1, 0.35, 'square');
+    }
+  },
+  melodia: {
+    label: '🎶 Melodia',
+    play: (ctx) => {
+      const seq = [523, 587, 659, 698, 784, 880];
+      playTones(ctx, seq, 0.16, 0.22, 'sine');
+    }
+  },
+  ping: {
+    label: '📍 Ping',
+    play: (ctx) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(1200, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.4);
+      gain.gain.setValueAtTime(0.4, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.type = 'sine';
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.5);
+    }
+  },
+  silencioso: {
+    label: '🔇 Silencioso',
+    play: () => {} // sem som
+  }
+};
+
+function playTones(ctx, freqs, step, vol, type = 'triangle') {
+  const osc  = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.type = type;
+  gain.gain.setValueAtTime(vol, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + freqs.length * step + 0.1);
+  freqs.forEach((f, i) => osc.frequency.setValueAtTime(f, ctx.currentTime + i * step));
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + freqs.length * step + 0.15);
 }
 
 // =====================================================
@@ -456,20 +537,10 @@ function scheduleNotification(r) {
 }
 
 function playSound(type) {
-  if (type === 'silencioso') return;
   try {
-    const ctx  = new (window.AudioContext || window.webkitAudioContext)();
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    const freqs = { padrão:[520,440,480], suave:[360,320,340], urgente:[880,660,880,660] };
-    const seq   = freqs[type] || freqs['padrão'];
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + seq.length * 0.2);
-    seq.forEach((f, i) => osc.frequency.setValueAtTime(f, ctx.currentTime + i * 0.18));
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + seq.length * 0.18 + 0.15);
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const sound = SOUNDS[type] || SOUNDS['padrão'];
+    sound.play(ctx);
   } catch(e) {}
 }
 
@@ -490,3 +561,4 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
