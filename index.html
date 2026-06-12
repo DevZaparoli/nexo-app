@@ -10,6 +10,22 @@
 </head>
 <body>
 
+
+  <!-- LOADING SCREEN -->
+  <div id="loading-screen" style="display:none;position:fixed;inset:0;background:#0f0f13;z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:16px">
+    <div style="width:48px;height:48px;background:#7c6ff7;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;animation:pulse 1.2s ease-in-out infinite">🔔</div>
+    <div style="color:#e8e8f0;font-size:18px;font-weight:600">Nexo</div>
+    <div style="display:flex;gap:6px;margin-top:4px">
+      <div style="width:8px;height:8px;background:#7c6ff7;border-radius:50%;animation:bounce 1s ease-in-out infinite"></div>
+      <div style="width:8px;height:8px;background:#7c6ff7;border-radius:50%;animation:bounce 1s ease-in-out .2s infinite"></div>
+      <div style="width:8px;height:8px;background:#7c6ff7;border-radius:50%;animation:bounce 1s ease-in-out .4s infinite"></div>
+    </div>
+  </div>
+  <style>
+    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+    @keyframes bounce { 0%,100%{transform:translateY(0);opacity:.4} 50%{transform:translateY(-6px);opacity:1} }
+  </style>
+
   <!-- AUTH SCREEN -->
   <div id="auth-screen" class="auth-screen">
     <div class="auth-card">
@@ -360,6 +376,7 @@
   <script src="public/js/app.js"></script>
 </body>
 </html>
+
 
 
 
