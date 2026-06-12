@@ -11,7 +11,24 @@ let editingId     = null;
 let currentView   = 'all';
 let currentFilter = 'all';
 let selectedSound = 'padrão';
-let notifTimers   = {};
+let swReg         = null;
+let autoCheckInterval = null;
+
+// =====================================================
+//  SERVICE WORKER
+// =====================================================
+
+async function registerSW() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    swReg = await navigator.serviceWorker.register('/sw.js');
+    // Recebe mensagens do SW
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data?.type === 'FIRED')     autoMarkDone(e.data.id);
+      if (e.data?.type === 'MARK_DONE') toggleDone(e.data.id);
+    });
+  } catch(err) { console.warn('SW error:', err); }
+}
 
 // =====================================================
 //  SUPABASE CRUD
@@ -31,6 +48,7 @@ async function loadReminders() {
   reminders = (data || []).map(dbToLocal);
   renderList();
   scheduleAllNotifications();
+  startAutoCheck();
 }
 
 async function insertReminder(r) {
@@ -98,6 +116,37 @@ function dbToLocal(row) {
     done:      row.done || false,
     repeatEnd: row.repeat_end || '',
   };
+}
+
+// =====================================================
+//  AUTO-CHECK: marca como feito após horário passar
+// =====================================================
+
+function startAutoCheck() {
+  if (autoCheckInterval) clearInterval(autoCheckInterval);
+  autoCheckInterval = setInterval(checkOverdueReminders, 30000); // a cada 30s
+  checkOverdueReminders(); // roda imediatamente
+}
+
+async function checkOverdueReminders() {
+  const now = new Date();
+  for (const r of reminders) {
+    if (r.done || !r.date || !r.time) continue;
+    const dt = new Date(r.date + 'T' + r.time);
+    // Se passou mais de 1 minuto do horário e não está feito
+    if ((now - dt) > 60000) {
+      await autoMarkDone(r.id);
+    }
+  }
+}
+
+async function autoMarkDone(id) {
+  const r = reminders.find(x => x.id === id);
+  if (!r || r.done) return;
+  r.done = true;
+  renderList();
+  await updateReminder(r);
+  showToast('✅ ' + r.title, 'Marcado como concluído automaticamente');
 }
 
 // =====================================================
@@ -219,12 +268,16 @@ async function toggleDone(id) {
   r.done = !r.done;
   renderList();
   await updateReminder(r);
+  // Cancela notificação pendente se marcou como feito
+  if (r.done && swReg?.active) {
+    swReg.active.postMessage({ type: 'CANCEL', id: r.id });
+  }
 }
 
 async function deleteReminder(id) {
   reminders = reminders.filter(x => x.id !== id);
   renderList();
-  clearNotifTimer(id);
+  if (swReg?.active) swReg.active.postMessage({ type: 'CANCEL', id });
   await deleteReminderDb(id);
 }
 
@@ -301,6 +354,7 @@ async function saveReminder() {
     reminders[idx] = local;
     await updateReminder(local);
     showToast('Lembrete atualizado', local.title);
+    scheduleNotification(local);
   } else {
     const saved = await insertReminder(local);
     if (saved) {
@@ -344,7 +398,7 @@ function updateSoundChips() {
 }
 
 // =====================================================
-//  NOTIFICAÇÕES PUSH
+//  NOTIFICAÇÕES PUSH via Service Worker
 // =====================================================
 
 function checkPermBanner() {
@@ -358,6 +412,7 @@ async function requestNotifPerm() {
   document.getElementById('perm-banner').style.display = 'none';
   if (perm === 'granted') {
     showToast('Notificações ativas!', 'Você receberá alertas nos seus lembretes.');
+    await registerSW();
     scheduleAllNotifications();
   }
 }
@@ -366,39 +421,38 @@ function scheduleAllNotifications() {
   reminders.forEach(r => scheduleNotification(r));
 }
 
-function clearNotifTimer(id) {
-  if (notifTimers[id]) { clearTimeout(notifTimers[id]); delete notifTimers[id]; }
-}
-
 function scheduleNotification(r) {
   if (r.done || !r.date || !r.time) return;
-  clearNotifTimer(r.id);
 
   const dt      = new Date(r.date + 'T' + r.time);
   const trigger = new Date(dt.getTime() - r.advance * 60000);
   const delay   = trigger - Date.now();
 
-  if (delay > 0 && delay < 86400000 * 7) {
-    notifTimers[r.id] = setTimeout(() => {
-      fireNotification(r);
-    }, delay);
-  }
-}
+  if (delay <= 0) return;
 
-function fireNotification(r) {
-  const body = r.desc || 'Hora do seu lembrete!';
-  showToast(r.title, body);
-
-  if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification('RemindMe: ' + r.title, {
-      body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
-      tag: 'reminder-' + r.id,
+  // Envia para o Service Worker (funciona em background)
+  if (swReg?.active && Notification.permission === 'granted') {
+    swReg.active.postMessage({
+      type: 'SCHEDULE',
+      id:    r.id,
+      title: r.title,
+      body:  r.desc || 'Hora do seu lembrete!',
+      delay
     });
   }
 
-  playSound(r.sound);
+  // Fallback: setTimeout + som (funciona apenas com aba aberta)
+  setTimeout(() => {
+    if (Notification.permission === 'granted') {
+      new Notification('RemindMe: ' + r.title, {
+        body: r.desc || 'Hora do seu lembrete!',
+        icon: '/public/icons/icon-192.png',
+        tag:  'reminder-' + r.id,
+      });
+    }
+    showToast('🔔 ' + r.title, r.desc || 'Hora do seu lembrete!');
+    playSound(r.sound);
+  }, Math.max(delay, 0));
 }
 
 function playSound(type) {
@@ -409,14 +463,13 @@ function playSound(type) {
     const gain = ctx.createGain();
     osc.connect(gain);
     gain.connect(ctx.destination);
-    const freqs = { padrão:[520,440], suave:[360,320], urgente:[880,660,880] };
+    const freqs = { padrão:[520,440,480], suave:[360,320,340], urgente:[880,660,880,660] };
     const seq   = freqs[type] || freqs['padrão'];
-    gain.gain.setValueAtTime(0.2, ctx.currentTime);
-    seq.forEach((f, i) => {
-      osc.frequency.setValueAtTime(f, ctx.currentTime + i * 0.15);
-    });
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + seq.length * 0.2);
+    seq.forEach((f, i) => osc.frequency.setValueAtTime(f, ctx.currentTime + i * 0.18));
     osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + seq.length * 0.15 + 0.1);
+    osc.stop(ctx.currentTime + seq.length * 0.18 + 0.15);
   } catch(e) {}
 }
 
@@ -431,6 +484,9 @@ function showToast(title, body) {
   const t = document.getElementById('toast');
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 4000);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 5000);
 }
 function closeToast() { document.getElementById('toast').classList.remove('show'); }
+
+// Init SW ao carregar
+registerSW();
