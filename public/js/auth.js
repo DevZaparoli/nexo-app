@@ -4,8 +4,39 @@
 
 let currentUser = null;
 
-// Verifica sessão e eventos de auth
+// Mostra loading enquanto restaura sessão do localStorage
+let sessionResolved = false;
+
+function showLoading() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display  = 'none';
+  document.getElementById('loading-screen').style.display = 'flex';
+}
+
+function hideLoading() {
+  document.getElementById('loading-screen').style.display = 'none';
+}
+
+// Aguarda restauração da sessão antes de decidir qual tela mostrar
+showLoading();
+
+// Timeout de segurança — se demorar mais de 3s vai para login
+const sessionTimeout = setTimeout(() => {
+  if (!sessionResolved) {
+    sessionResolved = true;
+    hideLoading();
+    showAuth();
+  }
+}, 3000);
+
 sb.auth.onAuthStateChange(async (event, session) => {
+  // Ignora eventos duplicados após resolução
+  if (event === 'INITIAL_SESSION' || !sessionResolved) {
+    sessionResolved = true;
+    clearTimeout(sessionTimeout);
+    hideLoading();
+  }
+
   if (session?.user) {
     currentUser = session.user;
 
@@ -31,6 +62,7 @@ sb.auth.onAuthStateChange(async (event, session) => {
 
   } else {
     currentUser = null;
+    hideLoading();
     showAuth();
   }
 });
@@ -298,4 +330,5 @@ function translateError(msg) {
 
 function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
+
 
