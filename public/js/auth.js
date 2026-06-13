@@ -4,53 +4,32 @@
 
 let currentUser = null;
 
-// Mostra loading enquanto restaura sessão do localStorage
-let sessionResolved = false;
+// --------------------------------------------------
+//  INICIALIZAÇÃO — lê sessão do localStorage primeiro
+//  antes de qualquer evento do onAuthStateChange
+// --------------------------------------------------
+(async () => {
+  showLoadingScreen();
 
-function showLoading() {
-  document.getElementById('auth-screen').style.display = 'none';
-  document.getElementById('app-screen').style.display  = 'none';
-  document.getElementById('loading-screen').style.display = 'flex';
-}
-
-function hideLoading() {
-  document.getElementById('loading-screen').style.display = 'none';
-}
-
-// Aguarda restauração da sessão antes de decidir qual tela mostrar
-showLoading();
-
-// Timeout de segurança — se demorar mais de 3s vai para login
-const sessionTimeout = setTimeout(() => {
-  if (!sessionResolved) {
-    sessionResolved = true;
-    hideLoading();
-    showAuth();
-  }
-}, 3000);
-
-sb.auth.onAuthStateChange(async (event, session) => {
-  // Ignora eventos duplicados após resolução
-  if (event === 'INITIAL_SESSION' || !sessionResolved) {
-    sessionResolved = true;
-    clearTimeout(sessionTimeout);
-    hideLoading();
-  }
+  // Lê sessão diretamente — não depende de eventos
+  const { data: { session } } = await sb.auth.getSession();
 
   if (session?.user) {
     currentUser = session.user;
-
-    // Fluxo de reset de senha — abre modal para nova senha
-    if (event === 'PASSWORD_RECOVERY') {
-      showAuth();
-      openResetPasswordModal();
-      return;
-    }
-
     await showApp();
+  } else {
+    showAuth();
+  }
 
-    // Primeiro login com Google → abre painel de senha
-    if (event === 'SIGNED_IN') {
+  hideLoadingScreen();
+
+  // Agora sim escuta mudanças futuras (login, logout, refresh)
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session?.user) {
+      currentUser = session.user;
+      await showApp();
+
+      // Primeiro login com Google → abre painel de senha
       const provider  = currentUser.app_metadata?.provider || '';
       const createdAt = new Date(currentUser.created_at).getTime();
       const isNew     = (Date.now() - createdAt) < 30000;
@@ -60,12 +39,35 @@ sb.auth.onAuthStateChange(async (event, session) => {
       }
     }
 
-  } else {
-    currentUser = null;
-    hideLoading();
-    showAuth();
-  }
-});
+    if (event === 'PASSWORD_RECOVERY') {
+      showAuth();
+      openResetPasswordModal();
+    }
+
+    if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      showAuth();
+    }
+
+    // TOKEN_REFRESHED — atualiza currentUser silenciosamente
+    if (event === 'TOKEN_REFRESHED' && session?.user) {
+      currentUser = session.user;
+    }
+  });
+})();
+
+// --------------------------------------------------
+//  Loading screen
+// --------------------------------------------------
+function showLoadingScreen() {
+  document.getElementById('loading-screen').style.display = 'flex';
+  document.getElementById('auth-screen').style.display   = 'none';
+  document.getElementById('app-screen').style.display    = 'none';
+}
+
+function hideLoadingScreen() {
+  document.getElementById('loading-screen').style.display = 'none';
+}
 
 // --------------------------------------------------
 //  Alternar tabs de login / registro
@@ -99,7 +101,6 @@ async function loginEmail() {
 
 // --------------------------------------------------
 //  Registro com e-mail e senha
-//  Só cria no banco após confirmação do e-mail
 // --------------------------------------------------
 async function registerEmail() {
   const name     = document.getElementById('reg-name').value.trim();
@@ -114,12 +115,8 @@ async function registerEmail() {
   if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
 
   const { error } = await sb.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { full_name: name },
-      emailRedirectTo: window.location.origin
-    }
+    email, password,
+    options: { data: { full_name: name }, emailRedirectTo: window.location.origin }
   });
 
   if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-user-plus"></i> Criar conta'; }
@@ -149,7 +146,7 @@ async function loginGoogle() {
 // --------------------------------------------------
 async function forgotPassword() {
   const email = document.getElementById('login-email').value.trim();
-  if (!email)              return showAuthError('Digite seu e-mail no campo acima.');
+  if (!email)               return showAuthError('Digite seu e-mail no campo acima.');
   if (!isValidEmail(email)) return showAuthError('Digite um e-mail válido.');
 
   const { error } = await sb.auth.resetPasswordForEmail(email, {
@@ -166,7 +163,7 @@ async function forgotPassword() {
 }
 
 // --------------------------------------------------
-//  Modal de redefinição de senha (após clicar no link)
+//  Modal de redefinição de senha
 // --------------------------------------------------
 function openResetPasswordModal() {
   document.getElementById('reset-password-modal').classList.add('show');
@@ -175,16 +172,13 @@ function openResetPasswordModal() {
 async function saveNewPassword() {
   const pass  = document.getElementById('reset-password-input').value;
   const pass2 = document.getElementById('reset-password-input2').value;
-  const errEl = document.getElementById('reset-password-error');
-  errEl.style.display = 'none';
 
-  if (!pass)             return showResetError('Digite uma nova senha.');
-  if (pass.length < 6)   return showResetError('A senha deve ter pelo menos 6 caracteres.');
-  if (pass !== pass2)    return showResetError('As senhas não coincidem.');
+  if (!pass)           return showResetError('Digite uma nova senha.');
+  if (pass.length < 6) return showResetError('A senha deve ter pelo menos 6 caracteres.');
+  if (pass !== pass2)  return showResetError('As senhas não coincidem.');
 
   const btn = document.getElementById('reset-save-btn');
   btn.disabled = true;
-
   const { error } = await sb.auth.updateUser({ password: pass });
   btn.disabled = false;
 
@@ -196,8 +190,7 @@ async function saveNewPassword() {
 
 function showResetError(msg) {
   const el = document.getElementById('reset-password-error');
-  el.textContent = msg;
-  el.style.display = 'block';
+  el.textContent = msg; el.style.display = 'block';
   el.style.background  = 'rgba(226,75,74,0.12)';
   el.style.borderColor = 'var(--danger)';
   el.style.color       = 'var(--danger)';
@@ -244,13 +237,12 @@ async function showApp() {
 }
 
 // --------------------------------------------------
-//  Painel "Completar perfil" — Google first login
+//  Completar perfil — Google first login
 // --------------------------------------------------
 function openCompleteProfileModal() {
   const meta     = currentUser.user_metadata || {};
   const name     = meta.full_name || meta.name || currentUser.email.split('@')[0];
-  const initials = name.slice(0, 2).toUpperCase();
-  document.getElementById('complete-avatar').textContent = initials;
+  document.getElementById('complete-avatar').textContent = name.slice(0, 2).toUpperCase();
   document.getElementById('complete-name').textContent   = name;
   document.getElementById('complete-email').textContent  = currentUser.email;
   document.getElementById('complete-password').value     = '';
@@ -260,7 +252,6 @@ function openCompleteProfileModal() {
 }
 
 async function skipCompleteProfile() {
-  // Define a senha padrão silenciosamente para o usuário poder logar com email também
   await sb.auth.updateUser({ password: 'mudar123' });
   document.getElementById('complete-profile-modal').classList.remove('show');
   showToast('⚠️ Lembrete de segurança', 'Sua senha padrão é mudar123. Troque assim que possível!');
@@ -286,9 +277,9 @@ async function saveCompleteProfile() {
 function showCompleteError(msg) {
   const el = document.getElementById('complete-profile-error');
   el.textContent = msg; el.style.display = 'block';
-  el.style.background = 'rgba(226,75,74,0.12)';
+  el.style.background  = 'rgba(226,75,74,0.12)';
   el.style.borderColor = 'var(--danger)';
-  el.style.color = 'var(--danger)';
+  el.style.color       = 'var(--danger)';
 }
 
 function togglePassVis(inputId, iconId) {
@@ -330,5 +321,3 @@ function translateError(msg) {
 
 function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
-
-
