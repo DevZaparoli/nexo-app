@@ -200,6 +200,15 @@ function showResetError(msg) {
 //  Logout
 // --------------------------------------------------
 async function logout() {
+  // Limpa todos os timers de notificação pendentes antes de deslogar
+  if (typeof notifTimers !== 'undefined') {
+    Object.keys(notifTimers).forEach(id => clearNotifTimers(id));
+  }
+  if (typeof autoCheckInterval !== 'undefined' && autoCheckInterval) {
+    clearInterval(autoCheckInterval);
+  }
+  reminders = [];
+
   await sb.auth.signOut();
   closeProfileModal();
 }
@@ -321,3 +330,4 @@ function translateError(msg) {
 
 function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
+
