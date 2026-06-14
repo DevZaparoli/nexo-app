@@ -97,6 +97,7 @@ function localToDb(r) {
     advance_min:  r.advance,
     done:         r.done,
     repeat_end:   r.repeatEnd || null,
+    weekdays:     r.weekdays && r.weekdays.length ? r.weekdays : null,
   };
 }
 
@@ -115,6 +116,7 @@ function dbToLocal(row) {
     advance:   row.advance_min || 0,
     done:      row.done || false,
     repeatEnd: row.repeat_end || '',
+    weekdays:  row.weekdays || [],
   };
 }
 
@@ -147,6 +149,12 @@ async function autoMarkDone(id) {
   r.done = true;
   renderList();
   await updateReminder(r);
+  clearNotifTimers(r.id);
+
+  if (r.repeat !== 'none') {
+    await scheduleNextOccurrence(r);
+  }
+
   showToast('✅ ' + r.title, 'Marcado como concluído automaticamente');
 }
 
@@ -213,7 +221,7 @@ function renderList() {
         <div class="reminder-top">
           <span class="priority-dot" style="background:${pcol}" title="Prioridade ${r.priority}"></span>
           <span class="reminder-title">${escHtml(r.title)}</span>
-          <span class="cat-badge" style="background:${col}22;color:${col}">${r.cat}</span>
+          <span class="cat-badge" style="background:${col}22;color:${col}">${escHtml(r.cat)}</span>
         </div>
         <div class="reminder-meta">
           <span class="reminder-time${ov ? ' overdue' : ''}">
@@ -269,16 +277,20 @@ async function toggleDone(id) {
   r.done = !r.done;
   renderList();
   await updateReminder(r);
-  // Cancela notificação pendente se marcou como feito
-  if (r.done && swReg?.active) {
-    swReg.active.postMessage({ type: 'CANCEL', id: r.id });
+
+  if (r.done) {
+    clearNotifTimers(r.id);
+    // Se for repetitivo, cria a próxima ocorrência
+    if (r.repeat !== 'none') {
+      await scheduleNextOccurrence(r);
+    }
   }
 }
 
 async function deleteReminder(id) {
   reminders = reminders.filter(x => x.id !== id);
   renderList();
-  if (swReg?.active) swReg.active.postMessage({ type: 'CANCEL', id });
+  clearNotifTimers(id);
   await deleteReminderDb(id);
 }
 
@@ -298,6 +310,7 @@ function openModal() {
   document.getElementById('f-repeat').value   = 'none';
   document.getElementById('f-advance').value  = '0';
   document.getElementById('f-repeat-end').value = '';
+  document.querySelectorAll('#f-weekdays-group input[type=checkbox]').forEach(cb => cb.checked = false);
   selectedSound = 'padrão';
   updateSoundChips();
   toggleWeekdays();
@@ -322,6 +335,10 @@ function editReminder(id) {
   selectedSound = r.sound;
   updateSoundChips();
   toggleWeekdays();
+  // Restaura dias da semana marcados
+  document.querySelectorAll('#f-weekdays-group input[type=checkbox]').forEach(cb => {
+    cb.checked = (r.weekdays || []).includes(parseInt(cb.value));
+  });
   setTab('detalhes', document.querySelectorAll('.tab')[0]);
   document.getElementById('modal-overlay').classList.add('show');
 }
@@ -335,15 +352,29 @@ async function saveReminder() {
   const btn = document.getElementById('save-btn');
   btn.disabled = true;
 
+  // Validação: data e hora obrigatórias
+  const dateVal = document.getElementById('f-date').value;
+  const timeVal = document.getElementById('f-time').value;
+  if (!dateVal || !timeVal) {
+    showToast('Data e hora obrigatórias', 'Preencha data e hora para o lembrete funcionar corretamente.');
+    document.getElementById('save-btn').disabled = false;
+    return;
+  }
+
+  // Lê dias da semana selecionados (repetição semanal)
+  const weekdays = Array.from(document.querySelectorAll('#f-weekdays-group input[type=checkbox]:checked'))
+    .map(cb => parseInt(cb.value));
+
   const local = {
     id:        editingId,
     title,
     desc:      document.getElementById('f-desc').value.trim(),
-    date:      document.getElementById('f-date').value,
-    time:      document.getElementById('f-time').value,
+    date:      dateVal,
+    time:      timeVal,
     cat:       document.getElementById('f-cat').value,
     priority:  document.getElementById('f-priority').value,
     repeat:    document.getElementById('f-repeat').value,
+    weekdays:  weekdays,
     sound:     selectedSound,
     advance:   parseInt(document.getElementById('f-advance').value),
     repeatEnd: document.getElementById('f-repeat-end').value,
@@ -510,6 +541,7 @@ function scheduleAllNotifications() {
 let inappCurrentId = null;
 let inappAutoClose = null;
 const snoozedIds = new Set(); // IDs adiados — não marcar como feito automaticamente
+const notifTimers = {}; // id -> [timeoutId, ...] para poder cancelar
 
 function showInAppNotif(id, title, body) {
   inappCurrentId = id;
@@ -568,7 +600,74 @@ function inappSnooze() {
   showToast('⏰ Adiado por 10 minutos', r.title);
 }
 
+// =====================================================
+//  REPETIÇÃO — calcula próxima ocorrência e recria lembrete
+// =====================================================
+
+function getNextOccurrenceDate(r) {
+  const cur = new Date(r.date + 'T' + r.time);
+  let next  = new Date(cur);
+
+  if (r.repeat === 'daily') {
+    next.setDate(next.getDate() + 1);
+  } else if (r.repeat === 'weekly') {
+    if (r.weekdays && r.weekdays.length) {
+      // Encontra o próximo dia da semana marcado
+      for (let i = 1; i <= 7; i++) {
+        const candidate = new Date(cur);
+        candidate.setDate(candidate.getDate() + i);
+        if (r.weekdays.includes(candidate.getDay())) { next = candidate; break; }
+      }
+    } else {
+      next.setDate(next.getDate() + 7);
+    }
+  } else if (r.repeat === 'monthly') {
+    next.setMonth(next.getMonth() + 1);
+  } else {
+    return null; // não repete
+  }
+
+  // Respeita data limite de repetição
+  if (r.repeatEnd) {
+    const limit = new Date(r.repeatEnd + 'T23:59');
+    if (next > limit) return null;
+  }
+
+  return next;
+}
+
+async function scheduleNextOccurrence(r) {
+  const next = getNextOccurrenceDate(r);
+  if (!next) return;
+
+  const nextLocal = {
+    ...r,
+    id:   null, // novo registro
+    date: next.toISOString().slice(0,10),
+    time: next.toTimeString().slice(0,5),
+    done: false,
+  };
+
+  const saved = await insertReminder(nextLocal);
+  if (saved) {
+    reminders.push(saved);
+    scheduleNotification(saved);
+    renderList();
+  }
+}
+
+function clearNotifTimers(id) {
+  if (notifTimers[id]) {
+    notifTimers[id].forEach(t => clearTimeout(t));
+    delete notifTimers[id];
+  }
+  if (swReg?.active) swReg.active.postMessage({ type: 'CANCEL', id });
+}
+
 function scheduleNotification(r) {
+  // Sempre limpa timers antigos primeiro — evita duplicar notificação ao editar
+  clearNotifTimers(r.id);
+
   if (r.done || !r.date || !r.time) return;
 
   const dt      = new Date(r.date + 'T' + r.time);
@@ -583,7 +682,7 @@ function scheduleNotification(r) {
   }
 
   // 2. setTimeout — garante disparo com aba aberta (independe de permissão)
-  setTimeout(() => {
+  const timeoutId = setTimeout(() => {
     const body = r.desc || 'Hora do seu lembrete!';
 
     // Notificação nativa (se tiver permissão)
@@ -601,7 +700,15 @@ function scheduleNotification(r) {
 
     // Som
     playSound(r.sound);
+
+    // Limpa o registro após disparar
+    delete notifTimers[r.id];
+
+    // Se for repetitivo, agenda a próxima ocorrência
+    scheduleNextOccurrence(r);
   }, Math.max(delay, 0));
+
+  notifTimers[r.id] = [timeoutId];
 }
 
 function playSound(type, repeat = 3) {
@@ -643,6 +750,7 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
 
 
 
