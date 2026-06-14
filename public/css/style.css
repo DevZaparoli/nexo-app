@@ -686,3 +686,264 @@ textarea.form-input { resize: vertical; }
 #inapp-notif.hiding {
   animation: slideOutTop .3s ease forwards;
 }
+
+
+/* =====================================================
+   MELHORIAS UI/UX — ANIMAÇÕES E REFINAMENTOS
+   ===================================================== */
+
+/* --- Contraste melhorado --- */
+:root {
+  --text3: #767690; /* era #5a5a72 — contraste WCAG AA */
+}
+
+/* --- Transições globais suaves --- */
+* {
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .15s ease, opacity .15s ease;
+}
+
+/* --- Entrada animada da lista de lembretes --- */
+.reminders-list .reminder-card {
+  animation: cardEnter .35s ease backwards;
+}
+.reminders-list .reminder-card:nth-child(1)  { animation-delay: 0.02s; }
+.reminders-list .reminder-card:nth-child(2)  { animation-delay: 0.05s; }
+.reminders-list .reminder-card:nth-child(3)  { animation-delay: 0.08s; }
+.reminders-list .reminder-card:nth-child(4)  { animation-delay: 0.11s; }
+.reminders-list .reminder-card:nth-child(5)  { animation-delay: 0.14s; }
+.reminders-list .reminder-card:nth-child(n+6) { animation-delay: 0.16s; }
+
+@keyframes cardEnter {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* --- Hover mais expressivo nos cards --- */
+.reminder-card {
+  position: relative;
+  overflow: hidden;
+}
+.reminder-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--accent-soft), transparent);
+  opacity: 0;
+  transition: opacity .25s ease;
+  pointer-events: none;
+}
+.reminder-card:hover::before { opacity: 1; }
+.reminder-card:hover {
+  transform: translateX(2px);
+  box-shadow: 0 4px 16px rgba(0,0,0,.25);
+}
+.reminder-card.done:hover { transform: none; box-shadow: none; }
+
+/* --- Check button: animação de "pop" ao marcar --- */
+.check-btn.checked {
+  animation: checkPop .35s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes checkPop {
+  0%   { transform: scale(0.6); }
+  60%  { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+/* --- Card "Atrasados" com destaque pulsante quando há itens --- */
+.stat-card.danger-border.has-overdue {
+  background: linear-gradient(135deg, rgba(226,75,74,0.08), var(--bg1));
+  animation: dangerPulse 2.5s ease-in-out infinite;
+}
+@keyframes dangerPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(226,75,74,0.0); }
+  50%      { box-shadow: 0 0 0 4px rgba(226,75,74,0.08); }
+}
+.stat-card.danger-border .stat-value {
+  transition: color .3s ease;
+}
+.stat-card.danger-border.has-overdue .stat-value {
+  color: var(--danger);
+}
+
+/* --- Stat cards: hover com leve elevação --- */
+.stat-card {
+  cursor: default;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,.2);
+}
+
+/* --- Botões: micro-interação de clique --- */
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0.15);
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+.btn-primary:hover::after { opacity: 1; }
+
+/* --- Nav items: indicador lateral animado --- */
+.nav-item {
+  position: relative;
+}
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px;
+  height: 60%;
+  background: var(--accent);
+  border-radius: 0 3px 3px 0;
+  transition: transform .2s ease;
+}
+.nav-item.active::before {
+  transform: translateY(-50%) scaleY(1);
+}
+
+/* --- Filter chips: transição de seleção --- */
+.filter-chip {
+  position: relative;
+}
+.filter-chip.active {
+  animation: chipSelect .25s ease;
+}
+@keyframes chipSelect {
+  from { transform: scale(0.95); }
+  to   { transform: scale(1); }
+}
+
+/* --- Modal: entrada com escala + blur de fundo --- */
+.modal-overlay {
+  backdrop-filter: blur(0px);
+  transition: backdrop-filter .25s ease, background-color .25s ease;
+}
+.modal-overlay.show {
+  backdrop-filter: blur(4px);
+}
+.modal {
+  animation: modalEnter .3s cubic-bezier(.16,1,.3,1);
+}
+@keyframes modalEnter {
+  from { opacity: 0; transform: scale(0.94) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* --- Tabs do modal: indicador deslizante --- */
+.tab-row {
+  position: relative;
+}
+.tab {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- Sound chips: feedback visual ao tocar --- */
+.sound-grid .sound-chip {
+  position: relative;
+}
+.sound-chip.playing {
+  animation: soundPlaying .5s ease;
+}
+@keyframes soundPlaying {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.06); box-shadow: 0 0 0 4px var(--accent-soft); }
+}
+
+/* --- View transition: fade ao trocar de view --- */
+.reminders-list {
+  animation: viewFade .25s ease;
+}
+@keyframes viewFade {
+  from { opacity: 0.3; }
+  to   { opacity: 1; }
+}
+
+/* --- Empty state: ícone com leve flutuação --- */
+.empty i {
+  animation: float 3s ease-in-out infinite;
+  display: inline-block;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+/* --- Toast e in-app notif: entrada com bounce sutil --- */
+.notif-toast.show {
+  animation: toastBounce .4s cubic-bezier(.34,1.4,.64,1);
+}
+@keyframes toastBounce {
+  0%   { transform: translateX(120%); opacity: 0; }
+  70%  { transform: translateX(-4px); opacity: 1; }
+  100% { transform: translateX(0); }
+}
+
+/* --- Badge de contagem: pulso quando atualiza --- */
+.nav-badge {
+  transition: transform .2s ease;
+}
+
+/* --- Skeleton loading --- */
+.skeleton-card {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 64px;
+}
+.skeleton-shimmer {
+  background: linear-gradient(90deg, var(--bg2) 25%, var(--bg3) 50%, var(--bg2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+.skeleton-circle { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; }
+.skeleton-lines  { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.skeleton-line   { height: 10px; }
+.skeleton-line.short { width: 40%; }
+.skeleton-line.long  { width: 70%; }
+
+/* --- Logo: leve animação no ícone --- */
+.logo-icon {
+  transition: transform .3s ease;
+}
+.logo:hover .logo-icon {
+  transform: rotate(-8deg) scale(1.05);
+}
+
+/* --- Avatar: anel sutil ao hover na sidebar --- */
+.user-row:hover .avatar {
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* --- Search input: leve crescimento ao focar --- */
+.search-wrap input:focus {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* --- Reduz animação para quem prefere --- */
+@media (prefers-reduced-motion: reduce) {
+  *, .reminder-card, .modal, .notif-toast, .empty i {
+    animation: none !important;
+    transition: none !important;
+  }
+}
