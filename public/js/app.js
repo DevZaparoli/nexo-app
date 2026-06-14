@@ -170,12 +170,21 @@ function isOverdue(r) {
 function isToday(r) { return r.date === getToday(); }
 
 function updateStats() {
-  document.getElementById('s-total').textContent = reminders.length;
-  document.getElementById('s-today').textContent = reminders.filter(r => isToday(r) && !r.done).length;
-  document.getElementById('s-late').textContent  = reminders.filter(r => isOverdue(r)).length;
-  document.getElementById('s-done').textContent  = reminders.filter(r => r.done).length;
+  const total   = reminders.length;
+  const today   = reminders.filter(r => isToday(r) && !r.done).length;
+  const late    = reminders.filter(r => isOverdue(r)).length;
+  const done    = reminders.filter(r => r.done).length;
+
+  document.getElementById('s-total').textContent = total;
+  document.getElementById('s-today').textContent = today;
+  document.getElementById('s-late').textContent  = late;
+  document.getElementById('s-done').textContent  = done;
   document.getElementById('badge-all').textContent   = reminders.filter(r => !r.done).length;
-  document.getElementById('badge-today').textContent = reminders.filter(r => isToday(r) && !r.done).length;
+  document.getElementById('badge-today').textContent = today;
+
+  // Destaque visual no card de atrasados
+  const lateCard = document.getElementById('s-late').closest('.stat-card');
+  lateCard.classList.toggle('has-overdue', late > 0);
 }
 
 function getFiltered() {
@@ -201,9 +210,16 @@ function renderList() {
   updateStats();
   const list = getFiltered();
   const el   = document.getElementById('reminders-list');
+  const hasSearch = document.getElementById('search-input').value.trim().length > 0;
 
   if (!list.length) {
-    el.innerHTML = `<div class="empty"><i class="ti ti-mood-empty"></i><div>Nenhum lembrete encontrado</div><div style="font-size:12px;margin-top:6px">Crie um novo lembrete com o botão acima</div></div>`;
+    if (hasSearch) {
+      el.innerHTML = `<div class="empty"><i class="ti ti-search-off"></i><div>Nenhum resultado para sua busca</div><div style="font-size:12px;margin-top:6px">Tente outro termo ou limpe o filtro</div></div>`;
+    } else if (reminders.length === 0) {
+      el.innerHTML = `<div class="empty"><i class="ti ti-mood-empty"></i><div>Você ainda não tem lembretes</div><div style="font-size:12px;margin-top:6px">Clique em "Novo lembrete" para criar o primeiro</div></div>`;
+    } else {
+      el.innerHTML = `<div class="empty"><i class="ti ti-filter-off"></i><div>Nada por aqui</div><div style="font-size:12px;margin-top:6px">Nenhum lembrete corresponde a este filtro</div></div>`;
+    }
     return;
   }
 
@@ -244,7 +260,21 @@ function escHtml(str) {
 }
 
 function showLoading(v) {
-  document.getElementById('loading-indicator').style.display = v ? 'block' : 'none';
+  const indicator = document.getElementById('loading-indicator');
+  const list = document.getElementById('reminders-list');
+  if (v) {
+    indicator.style.display = 'none';
+    list.innerHTML = Array.from({length: 4}).map(() => `
+      <div class="skeleton-card">
+        <div class="skeleton-circle skeleton-shimmer"></div>
+        <div class="skeleton-lines">
+          <div class="skeleton-line short skeleton-shimmer"></div>
+          <div class="skeleton-line long skeleton-shimmer"></div>
+        </div>
+      </div>`).join('');
+  } else {
+    indicator.style.display = 'none';
+  }
 }
 
 // =====================================================
@@ -422,6 +452,14 @@ function selectSound(s, el) {
   selectedSound = s;
   updateSoundChips();
   playSound(s); // toca prévia imediatamente
+
+  if (el) {
+    el.classList.remove('playing');
+    requestAnimationFrame(() => {
+      el.classList.add('playing');
+      setTimeout(() => el.classList.remove('playing'), 500);
+    });
+  }
 }
 
 function updateSoundChips() {
@@ -750,6 +788,7 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
 
 
 
