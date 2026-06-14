@@ -11,8 +11,32 @@ let currentUser = null;
 (async () => {
   showLoadingScreen();
 
-  // Lê sessão diretamente — não depende de eventos
-  const { data: { session } } = await sb.auth.getSession();
+  let session = null;
+  try {
+    const result = await sb.auth.getSession();
+    session = result?.data?.session || null;
+  } catch (e) {
+    console.error('Erro ao recuperar sessão:', e);
+  }
+
+  // Fallback: tenta ler diretamente do localStorage se getSession() não retornou nada
+  if (!session) {
+    try {
+      const raw = localStorage.getItem('nexo-session');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.access_token && parsed?.refresh_token) {
+          const { data, error } = await sb.auth.setSession({
+            access_token:  parsed.access_token,
+            refresh_token: parsed.refresh_token
+          });
+          if (!error && data?.session) session = data.session;
+        }
+      }
+    } catch (e) {
+      console.error('Erro no fallback de sessão:', e);
+    }
+  }
 
   if (session?.user) {
     currentUser = session.user;
@@ -330,4 +354,5 @@ function translateError(msg) {
 
 function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
+
 
