@@ -394,10 +394,11 @@ function openModal() {
   document.getElementById('f-repeat-end').value = '';
   document.querySelectorAll('#f-weekdays-group input[type=checkbox]').forEach(cb => cb.checked = false);
   selectedSound = 'padrão';
-  updateSoundChips();
+  renderCustomSounds();
   toggleWeekdays();
   setTab('detalhes', document.querySelectorAll('.tab')[0]);
   document.getElementById('modal-overlay').classList.add('show');
+  loadCustomSounds();
 }
 
 function editReminder(id) {
@@ -415,7 +416,7 @@ function editReminder(id) {
   document.getElementById('f-advance').value  = r.advance;
   document.getElementById('f-repeat-end').value = r.repeatEnd || '';
   selectedSound = r.sound;
-  updateSoundChips();
+  renderCustomSounds();
   toggleWeekdays();
   // Restaura dias da semana marcados
   document.querySelectorAll('#f-weekdays-group input[type=checkbox]').forEach(cb => {
@@ -423,6 +424,7 @@ function editReminder(id) {
   });
   setTab('detalhes', document.querySelectorAll('.tab')[0]);
   document.getElementById('modal-overlay').classList.add('show');
+  loadCustomSounds();
 }
 
 function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
@@ -519,6 +521,141 @@ function updateSoundChips() {
     const val = el.dataset.sound;
     el.classList.toggle('active', val === selectedSound);
   });
+}
+
+// =====================================================
+//  SONS PERSONALIZADOS — upload, listagem, seleção, remoção
+// =====================================================
+const CUSTOM_SOUND_MAX_BYTES = 5 * 1024 * 1024; // 5MB
+const CUSTOM_SOUND_MAX_COUNT = 3;
+let customSounds = []; // [{ id, name, url, path }]
+
+async function loadCustomSounds() {
+  try {
+    const { data, error } = await sb.storage.from('custom-sounds').list(currentUser.id, {
+      sortBy: { column: 'created_at', order: 'asc' }
+    });
+    if (error) throw error;
+
+    customSounds = (data || []).map(f => {
+      const path = `${currentUser.id}/${f.name}`;
+      const { data: urlData } = sb.storage.from('custom-sounds').getPublicUrl(path);
+      return {
+        id:   f.name,
+        name: f.name.replace(/^\d+-/, '').replace(/\.[^.]+$/, ''),
+        url:  urlData.publicUrl,
+        path: path,
+      };
+    });
+  } catch (e) {
+    console.error('Erro ao carregar sons personalizados:', e);
+    customSounds = [];
+  }
+  renderCustomSounds();
+}
+
+function renderCustomSounds() {
+  const el = document.getElementById('custom-sounds-list');
+  if (!el) return;
+
+  const uploadBtn = document.getElementById('upload-sound-btn');
+  if (uploadBtn) uploadBtn.style.display = customSounds.length >= CUSTOM_SOUND_MAX_COUNT ? 'none' : 'inline-flex';
+
+  if (!customSounds.length) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--text3);grid-column:1/-1">Nenhum som personalizado ainda.</div>`;
+    updateSoundChips();
+    return;
+  }
+
+  el.innerHTML = customSounds.map(s => {
+    const value = `custom:${s.id}|${s.url}`;
+    return `
+      <div class="sound-chip" data-sound="${escHtml(value)}" style="position:relative;padding-right:26px" onclick="selectSound('${escHtml(value)}', this)">
+        🎧 ${escHtml(s.name.slice(0,12))}${s.name.length > 12 ? '…' : ''}
+        <span onclick="event.stopPropagation(); deleteCustomSound('${escHtml(s.path)}')"
+          style="position:absolute;top:2px;right:2px;width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:50%;color:var(--text3);cursor:pointer;font-size:11px"
+          title="Remover som" aria-label="Remover som">
+          <i class="ti ti-x"></i>
+        </span>
+      </div>`;
+  }).join('');
+
+  updateSoundChips();
+}
+
+async function handleSoundUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const statusEl = document.getElementById('sound-upload-status');
+  statusEl.style.display = 'block';
+
+  if (!file.type.startsWith('audio/')) {
+    statusEl.textContent = 'Selecione apenas arquivos de áudio.';
+    statusEl.style.color = 'var(--danger)';
+    event.target.value = '';
+    return;
+  }
+
+  if (file.size > CUSTOM_SOUND_MAX_BYTES) {
+    const sizeMb = (file.size / (1024*1024)).toFixed(1);
+    statusEl.textContent = `Arquivo muito grande (${sizeMb}MB). Máximo permitido: 5MB.`;
+    statusEl.style.color = 'var(--danger)';
+    event.target.value = '';
+    return;
+  }
+
+  if (customSounds.length >= CUSTOM_SOUND_MAX_COUNT) {
+    statusEl.textContent = `Você já tem ${CUSTOM_SOUND_MAX_COUNT} sons salvos. Remova um para enviar outro.`;
+    statusEl.style.color = 'var(--danger)';
+    event.target.value = '';
+    return;
+  }
+
+  statusEl.textContent = 'Enviando...';
+  statusEl.style.color = 'var(--text2)';
+
+  try {
+    const ext      = file.name.split('.').pop().toLowerCase();
+    const safeName = file.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9-_ ]/g, '').trim().slice(0, 30) || 'som';
+    const filePath = `${currentUser.id}/${Date.now()}-${safeName}.${ext}`;
+
+    const { error: uploadError } = await sb.storage
+      .from('custom-sounds')
+      .upload(filePath, file, { upsert: false, cacheControl: '3600' });
+
+    if (uploadError) throw uploadError;
+
+    statusEl.textContent = '✓ Som adicionado!';
+    statusEl.style.color = 'var(--success)';
+    setTimeout(() => { statusEl.style.display = 'none'; }, 2500);
+
+    await loadCustomSounds();
+  } catch (e) {
+    console.error('Erro ao enviar som:', e);
+    statusEl.textContent = 'Erro ao enviar arquivo. Tente novamente.';
+    statusEl.style.color = 'var(--danger)';
+  } finally {
+    event.target.value = '';
+  }
+}
+
+async function deleteCustomSound(path) {
+  try {
+    const { error } = await sb.storage.from('custom-sounds').remove([path]);
+    if (error) throw error;
+
+    // Se o som excluído estava selecionado, volta para o padrão
+    if (selectedSound.includes(path.split('/').pop())) {
+      selectedSound = 'padrão';
+    }
+
+    await loadCustomSounds();
+    showToast('Som removido', 'O som personalizado foi excluído.');
+  } catch (e) {
+    console.error('Erro ao remover som:', e);
+    showToast('Erro', 'Não foi possível remover o som.');
+  }
 }
 
 // =====================================================
@@ -803,6 +940,12 @@ function scheduleNotification(r) {
 
 function playSound(type, repeat = 3) {
   if (type === 'silencioso') return;
+
+  // Sons personalizados — formato "custom:<id>|<url>"
+  if (type && type.startsWith('custom:')) {
+    return playCustomSound(type, repeat);
+  }
+
   try {
     const ctx   = new (window.AudioContext || window.webkitAudioContext)();
     const sound = SOUNDS[type] || SOUNDS['padrão'];
@@ -821,6 +964,24 @@ function playSound(type, repeat = 3) {
       }, offset * 1000);
     }
   } catch(e) {}
+}
+
+function playCustomSound(type, repeat = 3) {
+  const url = type.split('|')[1];
+  if (!url) return;
+
+  let playCount = 0;
+  const play = () => {
+    if (playCount >= repeat) return;
+    playCount++;
+    const audio = new Audio(url);
+    audio.volume = 0.8;
+    audio.addEventListener('ended', () => {
+      if (playCount < repeat) setTimeout(play, 300);
+    });
+    audio.play().catch(e => console.error('Erro ao tocar som personalizado:', e));
+  };
+  play();
 }
 
 // =====================================================
@@ -869,6 +1030,7 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   ENTER_SUBMIT_MAP[id]();
 });
+
 
 
 
