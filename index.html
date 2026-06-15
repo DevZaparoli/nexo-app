@@ -234,17 +234,60 @@
 
   <!-- PROFILE MODAL -->
   <div class="modal-overlay" id="profile-modal">
-    <div class="modal" style="max-width:360px">
+    <div class="modal" style="max-width:380px">
       <div class="modal-title">
         <span>Perfil</span>
         <button class="icon-btn" onclick="closeProfileModal()"><i class="ti ti-x"></i></button>
       </div>
+
+      <!-- Avatar com upload -->
       <div style="text-align:center;margin-bottom:20px">
-        <div class="avatar" id="profile-avatar" style="width:56px;height:56px;font-size:20px;margin:0 auto 10px"></div>
-        <div style="font-size:15px;font-weight:500" id="profile-name"></div>
-        <div style="font-size:12px;color:var(--text3)" id="profile-email"></div>
+        <div style="position:relative;display:inline-block">
+          <div class="avatar" id="profile-avatar" style="width:72px;height:72px;font-size:26px;overflow:hidden"></div>
+          <button class="icon-btn" onclick="document.getElementById('avatar-file-input').click()"
+            style="position:absolute;bottom:-4px;right:-4px;width:26px;height:26px;background:var(--accent);color:#fff;border-radius:50%;border:2px solid var(--bg1)"
+            title="Alterar foto" aria-label="Alterar foto de perfil">
+            <i class="ti ti-camera" style="font-size:13px"></i>
+          </button>
+          <input type="file" id="avatar-file-input" accept="image/*" style="display:none" onchange="handleAvatarUpload(event)">
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px">JPG, PNG ou WEBP · máximo 2MB</div>
+        <div id="avatar-upload-status" style="font-size:12px;margin-top:4px;display:none"></div>
       </div>
-      <button class="btn btn-ghost w-full" style="color:var(--danger);border-color:var(--danger);margin-top:8px" onclick="logout()">
+
+      <div id="profile-error" class="auth-error" style="display:none"></div>
+
+      <!-- Nome -->
+      <div class="form-group">
+        <label class="form-label">Nome</label>
+        <div style="display:flex;gap:8px">
+          <input class="form-input" type="text" id="profile-name-input" placeholder="Seu nome">
+          <button class="btn btn-ghost" onclick="saveProfileName()" id="save-name-btn" style="white-space:nowrap"><i class="ti ti-check"></i></button>
+        </div>
+      </div>
+
+      <div style="font-size:12px;color:var(--text3);margin-bottom:16px;word-break:break-all" id="profile-email"></div>
+
+      <!-- Troca de senha -->
+      <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:8px">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.04em">Alterar senha</div>
+        <div class="form-group">
+          <label class="form-label">Nova senha</label>
+          <div style="position:relative">
+            <input class="form-input" type="password" id="profile-new-password" placeholder="Mínimo 6 caracteres" style="padding-right:40px">
+            <span onclick="togglePassVis('profile-new-password','profile-pass-eye')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text3)" id="profile-pass-eye"><i class="ti ti-eye"></i></span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirmar nova senha</label>
+          <input class="form-input" type="password" id="profile-new-password2" placeholder="Repita a senha">
+        </div>
+        <button class="btn btn-ghost w-full" onclick="saveProfilePassword()" id="save-password-btn">
+          <i class="ti ti-key"></i> Atualizar senha
+        </button>
+      </div>
+
+      <button class="btn btn-ghost w-full" style="color:var(--danger);border-color:var(--danger);margin-top:20px" onclick="logout()">
         <i class="ti ti-logout"></i> Sair da conta
       </button>
     </div>
@@ -371,6 +414,7 @@
   <script src="/public/js/app.js?v=1781519873"></script>
 </body>
 </html>
+
 
 
 
