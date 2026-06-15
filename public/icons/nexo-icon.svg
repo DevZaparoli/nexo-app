@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Fundo -->
+  <rect width="512" height="512" rx="96" fill="#131315"/>
+
+  <!-- Anel externo -->
+  <circle cx="256" cy="256" r="170" fill="none" stroke="#34343a" stroke-width="14"/>
+
+  <!-- Marcações do mostrador (12, 3, 6, 9) -->
+  <g stroke="#565560" stroke-width="10" stroke-linecap="round">
+    <line x1="256" y1="96"  x2="256" y2="118"/>
+    <line x1="256" y1="394" x2="256" y2="416"/>
+    <line x1="96"  y1="256" x2="118" y2="256"/>
+    <line x1="394" y1="256" x2="416" y2="256"/>
+  </g>
+
+  <!-- Ponteiro âmbar -->
+  <line x1="256" y1="256" x2="256" y2="148" stroke="#ffb454" stroke-width="20" stroke-linecap="round"/>
+
+  <!-- Centro -->
+  <circle cx="256" cy="256" r="20" fill="#ffb454"/>
+</svg>
