@@ -22,6 +22,18 @@ const bootSafetyTimeout = setTimeout(() => {
 }, 15000);
 
 (async () => {
+  // Garante que app.js já definiu suas funções (restoreSidebarState, loadReminders, etc)
+  // antes de prosseguir — evita ReferenceError por ordem de carregamento de scripts.
+  if (typeof restoreSidebarState !== 'function') {
+    await new Promise(resolve => {
+      const check = () => {
+        if (typeof restoreSidebarState === 'function') resolve();
+        else setTimeout(check, 10);
+      };
+      check();
+    });
+  }
+
   showLoadingScreen();
 
   let session = null;
@@ -252,7 +264,6 @@ function showAuth() {
 }
 
 async function showApp() {
-  console.log('[NEXO] showApp() chamado. currentUser=', currentUser?.id, currentUser?.email);
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app-screen').style.display  = 'flex';
 
@@ -362,6 +373,7 @@ function translateError(msg) {
 
 function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
+
 
 
 
