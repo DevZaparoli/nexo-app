@@ -3,11 +3,22 @@
 // =====================================================
 
 let currentUser = null;
+let appInitialized = false; // evita showApp() duplo na inicialização
 
 // --------------------------------------------------
 //  INICIALIZAÇÃO — lê sessão do localStorage primeiro
 //  antes de qualquer evento do onAuthStateChange
 // --------------------------------------------------
+// Timeout de segurança absoluto — garante que o loading nunca trave para sempre
+const bootSafetyTimeout = setTimeout(() => {
+  if (!appInitialized) {
+    console.warn('Boot demorou demais, forçando tela de login.');
+    hideLoadingScreen();
+    showAuth();
+    appInitialized = true;
+  }
+}, 6000);
+
 (async () => {
   showLoadingScreen();
 
@@ -19,38 +30,29 @@ let currentUser = null;
     console.error('Erro ao recuperar sessão:', e);
   }
 
-  // Fallback: tenta ler diretamente do localStorage se getSession() não retornou nada
-  if (!session) {
-    try {
-      const raw = localStorage.getItem('nexo-session');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed?.access_token && parsed?.refresh_token) {
-          const { data, error } = await sb.auth.setSession({
-            access_token:  parsed.access_token,
-            refresh_token: parsed.refresh_token
-          });
-          if (!error && data?.session) session = data.session;
-        }
-      }
-    } catch (e) {
-      console.error('Erro no fallback de sessão:', e);
+  try {
+    if (session?.user) {
+      currentUser = session.user;
+      await showApp();
+    } else {
+      showAuth();
     }
-  }
-
-  if (session?.user) {
-    currentUser = session.user;
-    await showApp();
-  } else {
+  } catch (e) {
+    console.error('Erro ao montar tela inicial:', e);
     showAuth();
+  } finally {
+    clearTimeout(bootSafetyTimeout);
+    hideLoadingScreen();
+    appInitialized = true;
   }
-
-  hideLoadingScreen();
 
   // Agora sim escuta mudanças futuras (login, logout, refresh)
   sb.auth.onAuthStateChange(async (event, session) => {
+    // Ignora o SIGNED_IN que o Supabase dispara durante a própria inicialização
+    // (já tratado no bloco acima) — só processa eventos pós-boot
     if (event === 'SIGNED_IN' && session?.user) {
       currentUser = session.user;
+      if (!appInitialized) return; // evita showApp() duplicado no boot
       await showApp();
 
       // Primeiro login com Google → abre painel de senha
@@ -355,6 +357,7 @@ function translateError(msg) {
 
 function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
+
 
 
 
