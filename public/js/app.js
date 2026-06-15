@@ -2,8 +2,8 @@
 //  APP — Lembretes com Supabase CRUD + Notificações
 // =====================================================
 
-const CAT_COLORS  = { Trabalho:'#7c6ff7', Saúde:'#22c97a', Pessoal:'#f5a623', Financeiro:'#e24b4a', Estudos:'#5dcaa5' };
-const PRI_COLORS  = { normal:'#5a5a72', alta:'#f5a623', urgente:'#e24b4a' };
+const CAT_COLORS  = { Trabalho:'#c9c6ff', Saúde:'#8fd9a8', Pessoal:'#ffb454', Financeiro:'#ff8a80', Estudos:'#9ad1ff' };
+const PRI_COLORS  = { normal:'#84828c', alta:'#ffb454', urgente:'#ff8a80' };
 const REPEAT_LABEL = { none:'', daily:'Diário', weekly:'Semanal', monthly:'Mensal' };
 
 let reminders     = [];
@@ -237,7 +237,7 @@ function renderList() {
         <div class="reminder-top">
           <span class="priority-dot" style="background:${pcol}" title="Prioridade ${r.priority}"></span>
           <span class="reminder-title">${escHtml(r.title)}</span>
-          <span class="cat-badge" style="background:${col}22;color:${col}">${escHtml(r.cat)}</span>
+          <span class="cat-badge" style="background:${col}14;color:${col};border-color:${col}33">${escHtml(r.cat)}</span>
         </div>
         <div class="reminder-meta">
           <span class="reminder-time${ov ? ' overdue' : ''}">
@@ -280,6 +280,22 @@ function showLoading(v) {
 // =====================================================
 //  VIEW / FILTER
 // =====================================================
+
+// =====================================================
+//  SIDEBAR COLAPSÁVEL
+// =====================================================
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.toggle('collapsed');
+  localStorage.setItem('nexo-sidebar-collapsed', sidebar.classList.contains('collapsed') ? '1' : '0');
+}
+
+function restoreSidebarState() {
+  if (localStorage.getItem('nexo-sidebar-collapsed') === '1') {
+    document.getElementById('sidebar').classList.add('collapsed');
+  }
+}
 
 function setView(v, el) {
   currentView = v;
@@ -788,6 +804,7 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
 
 
 
