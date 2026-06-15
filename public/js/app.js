@@ -35,8 +35,11 @@ async function registerSW() {
 // =====================================================
 
 async function loadReminders(retryCount = 0) {
+  console.log('[NEXO] loadReminders chamado. retryCount=', retryCount, 'currentUser=', currentUser?.id);
   showLoading(true);
   try {
+    if (!currentUser?.id) throw new Error('currentUser ausente em loadReminders');
+
     const { data, error } = await sb
       .from('reminders')
       .select('*')
@@ -838,6 +841,7 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
 
 
 
