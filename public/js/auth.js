@@ -22,10 +22,22 @@ const bootSafetyTimeout = setTimeout(() => {
 (async () => {
   showLoadingScreen();
 
+  // === DEBUG TEMPORÁRIO ===
+  try {
+    const lsKeys = Object.keys(localStorage).filter(k => k.includes('nexo') || k.includes('supabase') || k.includes('sb-'));
+    console.log('[NEXO DEBUG] Chaves no localStorage:', lsKeys);
+    lsKeys.forEach(k => {
+      const val = localStorage.getItem(k);
+      console.log('[NEXO DEBUG]', k, '=', val ? val.slice(0, 150) + '...' : null);
+    });
+  } catch(e) { console.error('[NEXO DEBUG] erro lendo localStorage:', e); }
+  // === FIM DEBUG ===
+
   let session = null;
   try {
     const result = await sb.auth.getSession();
     session = result?.data?.session || null;
+    console.log('[NEXO DEBUG] getSession() resultado:', result);
   } catch (e) {
     console.error('Erro ao recuperar sessão:', e);
   }
@@ -357,6 +369,7 @@ function translateError(msg) {
 
 function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
+
 
 
 
