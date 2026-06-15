@@ -34,7 +34,7 @@ async function registerSW() {
 //  SUPABASE CRUD
 // =====================================================
 
-async function loadReminders() {
+async function loadReminders(retryCount = 0) {
   showLoading(true);
   try {
     const { data, error } = await sb
@@ -43,23 +43,46 @@ async function loadReminders() {
       .eq('user_id', currentUser.id)
       .order('reminder_at', { ascending: true });
 
-    if (error) {
-      console.error('Erro ao carregar lembretes:', error);
-      showToast('Erro de conexão', 'Não foi possível carregar seus lembretes agora.');
-      return;
-    }
+    if (error) throw error;
 
     reminders = (data || []).map(dbToLocal);
     renderList();
     scheduleAllNotifications();
     startAutoCheck();
-  } catch (e) {
-    // Falha de rede (ex: Tracking Prevention bloqueando fetch) — não deslogar
-    console.error('Falha de rede ao carregar lembretes:', e);
-    showToast('Erro de conexão', 'Não foi possível carregar seus lembretes agora.');
-  } finally {
     showLoading(false);
+  } catch (e) {
+    console.error('Erro ao carregar lembretes (tentativa ' + (retryCount + 1) + '):', e);
+
+    // Retry automático — alguns navegadores (Edge Tracking Prevention) bloqueiam
+    // o primeiro fetch logo após o load, mas liberam em seguida
+    if (retryCount < 2) {
+      setTimeout(() => loadReminders(retryCount + 1), 1200 * (retryCount + 1));
+      return;
+    }
+
+    // Esgotou as tentativas — mostra erro com botão de retry manual
+    showLoading(false);
+    showLoadError();
   }
+}
+
+function showLoadError() {
+  const el = document.getElementById('reminders-list');
+  el.innerHTML = `
+    <div class="empty">
+      <i class="ti ti-wifi-off"></i>
+      <div>Não foi possível carregar seus lembretes</div>
+      <div style="font-size:12px;margin-top:6px;margin-bottom:16px">
+        Seu navegador pode estar bloqueando a conexão (ex: Prevenção de Rastreamento do Edge).
+      </div>
+      <button class="btn btn-primary" onclick="retryLoadReminders()">
+        <i class="ti ti-refresh"></i> Tentar de novo
+      </button>
+    </div>`;
+}
+
+function retryLoadReminders() {
+  loadReminders(0);
 }
 
 async function insertReminder(r) {
@@ -815,6 +838,7 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
 
 
 
