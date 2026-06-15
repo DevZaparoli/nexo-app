@@ -691,3 +691,14 @@ textarea.form-input { resize: vertical; font-family: var(--font-body); }
   .sound-grid { grid-template-columns: repeat(2, 1fr); }
   .topbar-title { display: none; }
 }
+
+
+/* =====================================================
+   PERFIL — avatar com upload de foto
+   ===================================================== */
+.avatar img {
+  display: block;
+}
+#profile-avatar {
+  font-family: var(--font-display);
+}
