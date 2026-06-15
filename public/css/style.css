@@ -702,3 +702,15 @@ textarea.form-input { resize: vertical; font-family: var(--font-body); }
 #profile-avatar {
   font-family: var(--font-display);
 }
+
+
+/* =====================================================
+   SONS PERSONALIZADOS
+   ===================================================== */
+.sound-grid .sound-chip span[onclick] {
+  transition: background .15s var(--ease), color .15s var(--ease);
+}
+.sound-grid .sound-chip span[onclick]:hover {
+  background: rgba(255,138,128,0.15);
+  color: var(--err);
+}
