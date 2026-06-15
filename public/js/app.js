@@ -841,6 +841,36 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 // Init SW ao carregar
 registerSW();
 
+// =====================================================
+//  ENTER PARA SUBMETER — mapeia campos a botões de ação
+// =====================================================
+
+const ENTER_SUBMIT_MAP = {
+  'login-password':         () => loginEmail(),
+  'login-email':            () => loginEmail(),
+  'reg-password':           () => registerEmail(),
+  'reg-email':              () => document.getElementById('reg-password')?.focus(),
+  'reg-name':               () => document.getElementById('reg-email')?.focus(),
+  'reset-password-input2':  () => saveNewPassword(),
+  'reset-password-input':   () => document.getElementById('reset-password-input2')?.focus(),
+  'complete-password2':     () => saveCompleteProfile(),
+  'complete-password':      () => document.getElementById('complete-password2')?.focus(),
+  'profile-new-password2':  () => saveProfilePassword(),
+  'profile-new-password':   () => document.getElementById('profile-new-password2')?.focus(),
+  'profile-name-input':     () => saveProfileName(),
+};
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const id = e.target?.id;
+  if (!id || !(id in ENTER_SUBMIT_MAP)) return;
+
+  // Evita submit de <form> nativo / quebra de linha em textarea
+  e.preventDefault();
+  ENTER_SUBMIT_MAP[id]();
+});
+
+
 
 
 
