@@ -265,6 +265,7 @@ async function showApp() {
   document.getElementById('profile-name').innerHTML     = name + badge;
   document.getElementById('profile-email').textContent  = email;
 
+  restoreSidebarState();
   await loadReminders();
   checkPermBanner();
 }
@@ -354,5 +355,6 @@ function translateError(msg) {
 
 function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
+
 
 
