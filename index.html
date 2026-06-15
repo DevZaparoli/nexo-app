@@ -12,25 +12,18 @@
 
 
   <!-- LOADING SCREEN -->
-  <div id="loading-screen" style="display:none;position:fixed;inset:0;background:#0f0f13;z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:16px">
-    <div style="width:48px;height:48px;background:#7c6ff7;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;animation:pulse 1.2s ease-in-out infinite">🔔</div>
-    <div style="color:#e8e8f0;font-size:18px;font-weight:600">Nexo</div>
-    <div style="display:flex;gap:6px;margin-top:4px">
-      <div style="width:8px;height:8px;background:#7c6ff7;border-radius:50%;animation:bounce 1s ease-in-out infinite"></div>
-      <div style="width:8px;height:8px;background:#7c6ff7;border-radius:50%;animation:bounce 1s ease-in-out .2s infinite"></div>
-      <div style="width:8px;height:8px;background:#7c6ff7;border-radius:50%;animation:bounce 1s ease-in-out .4s infinite"></div>
-    </div>
+  <div id="loading-screen" style="display:none">
+    <div class="loading-mark"></div>
+    <div class="loading-text">NEXO</div>
+    <div class="loading-sub">carregando seus lembretes</div>
   </div>
-  <style>
-    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
-    @keyframes bounce { 0%,100%{transform:translateY(0);opacity:.4} 50%{transform:translateY(-6px);opacity:1} }
-  </style>
+
 
   <!-- AUTH SCREEN -->
   <div id="auth-screen" class="auth-screen">
     <div class="auth-card">
       <div class="auth-logo">
-        <div class="logo-icon"><i class="ti ti-bell"></i></div>
+        <div class="logo-icon"></div>
         <span class="logo-text">Nexo</span>
       </div>
       <p class="auth-sub">Seus lembretes em qualquer dispositivo</p>
@@ -88,23 +81,25 @@
 
   <!-- APP SCREEN -->
   <div id="app-screen" class="app" style="display:none">
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar">
       <div class="logo">
-        <div class="logo-icon"><i class="ti ti-bell"></i></div>
+        <div class="logo-icon"></div>
         <span class="logo-text">Nexo</span>
+        <button class="sidebar-collapse-btn" onclick="toggleSidebar()" aria-label="Recolher menu"><i class="ti ti-chevron-left"></i></button>
       </div>
       <nav class="nav">
+        <button class="sidebar-expand-btn" onclick="toggleSidebar()" aria-label="Expandir menu"><i class="ti ti-chevron-right"></i></button>
         <div class="nav-section">Menu</div>
-        <div class="nav-item active" data-view="all" onclick="setView('all',this)"><i class="ti ti-layout-dashboard"></i>Todos <span class="nav-badge" id="badge-all">0</span></div>
-        <div class="nav-item" data-view="today" onclick="setView('today',this)"><i class="ti ti-calendar-event"></i>Hoje <span class="nav-badge warn" id="badge-today">0</span></div>
-        <div class="nav-item" data-view="upcoming" onclick="setView('upcoming',this)"><i class="ti ti-clock"></i>Próximos</div>
-        <div class="nav-item" data-view="done" onclick="setView('done',this)"><i class="ti ti-circle-check"></i>Concluídos</div>
+        <div class="nav-item active" data-view="all" onclick="setView('all',this)" title="Todos"><i class="ti ti-layout-dashboard"></i><span class="nav-label">Todos</span> <span class="nav-badge" id="badge-all">0</span></div>
+        <div class="nav-item" data-view="today" onclick="setView('today',this)" title="Hoje"><i class="ti ti-calendar-event"></i><span class="nav-label">Hoje</span> <span class="nav-badge warn" id="badge-today">0</span></div>
+        <div class="nav-item" data-view="upcoming" onclick="setView('upcoming',this)" title="Próximos"><i class="ti ti-clock"></i><span class="nav-label">Próximos</span></div>
+        <div class="nav-item" data-view="done" onclick="setView('done',this)" title="Concluídos"><i class="ti ti-circle-check"></i><span class="nav-label">Concluídos</span></div>
         <div class="nav-section" style="margin-top:12px">Categorias</div>
-        <div class="nav-item" onclick="setView('cat:Trabalho',this)"><span class="cat-dot" style="background:#7c6ff7"></span>Trabalho</div>
-        <div class="nav-item" onclick="setView('cat:Saúde',this)"><span class="cat-dot" style="background:#22c97a"></span>Saúde</div>
-        <div class="nav-item" onclick="setView('cat:Pessoal',this)"><span class="cat-dot" style="background:#f5a623"></span>Pessoal</div>
-        <div class="nav-item" onclick="setView('cat:Financeiro',this)"><span class="cat-dot" style="background:#e24b4a"></span>Financeiro</div>
-        <div class="nav-item" onclick="setView('cat:Estudos',this)"><span class="cat-dot" style="background:#5dcaa5"></span>Estudos</div>
+        <div class="nav-item" onclick="setView('cat:Trabalho',this)" title="Trabalho"><span class="cat-dot" style="background:#c9c6ff"></span><span class="nav-label">Trabalho</span></div>
+        <div class="nav-item" onclick="setView('cat:Saúde',this)" title="Saúde"><span class="cat-dot" style="background:#8fd9a8"></span><span class="nav-label">Saúde</span></div>
+        <div class="nav-item" onclick="setView('cat:Pessoal',this)" title="Pessoal"><span class="cat-dot" style="background:#ffb454"></span><span class="nav-label">Pessoal</span></div>
+        <div class="nav-item" onclick="setView('cat:Financeiro',this)" title="Financeiro"><span class="cat-dot" style="background:#ff8a80"></span><span class="nav-label">Financeiro</span></div>
+        <div class="nav-item" onclick="setView('cat:Estudos',this)" title="Estudos"><span class="cat-dot" style="background:#9ad1ff"></span><span class="nav-label">Estudos</span></div>
       </nav>
       <div class="sidebar-footer">
         <div class="user-row" onclick="openProfileModal()">
@@ -113,7 +108,7 @@
             <div class="user-name" id="user-name">Carregando...</div>
             <div class="user-email" id="user-email"></div>
           </div>
-          <i class="ti ti-settings" style="font-size:15px;color:var(--text3)"></i>
+          <i class="ti ti-settings" style="font-size:15px;color:var(--paper-2)"></i>
         </div>
       </div>
     </div>
@@ -376,6 +371,7 @@
   <script src="/public/js/app.js"></script>
 </body>
 </html>
+
 
 
 
