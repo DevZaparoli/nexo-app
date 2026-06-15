@@ -35,7 +35,6 @@ async function registerSW() {
 // =====================================================
 
 async function loadReminders(retryCount = 0) {
-  console.log('[NEXO] loadReminders chamado. retryCount=', retryCount, 'currentUser=', currentUser?.id);
   showLoading(true);
   try {
     if (!currentUser?.id) throw new Error('currentUser ausente em loadReminders');
@@ -46,12 +45,9 @@ async function loadReminders(retryCount = 0) {
       .eq('user_id', currentUser.id)
       .order('reminder_at', { ascending: true });
 
-    console.log('[NEXO] resultado query reminders: data=', data, 'error=', error, 'len=', data?.length);
-
     if (error) throw error;
 
     reminders = (data || []).map(dbToLocal);
-    console.log('[NEXO] reminders após map:', reminders);
     renderList();
     scheduleAllNotifications();
     startAutoCheck();
@@ -844,6 +840,7 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
 
 
 
