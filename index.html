@@ -221,6 +221,20 @@
             <div class="sound-chip" data-sound="silencioso" onclick="selectSound('silencioso',this)">🔇 Silencioso</div>
           </div>
         </div>
+
+        <!-- Sons personalizados -->
+        <div class="form-group">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <label class="form-label" style="margin:0">Meus sons <span style="font-size:11px;color:var(--text3)">(máx. 3 · 5MB cada)</span></label>
+            <button type="button" class="btn btn-ghost" id="upload-sound-btn" onclick="document.getElementById('sound-file-input').click()" style="padding:5px 12px;font-size:12px">
+              <i class="ti ti-upload"></i> Enviar som
+            </button>
+            <input type="file" id="sound-file-input" accept="audio/*" style="display:none" onchange="handleSoundUpload(event)">
+          </div>
+          <div id="custom-sounds-list" class="sound-grid" style="grid-template-columns:repeat(3,1fr)"></div>
+          <div id="sound-upload-status" style="font-size:12px;margin-top:8px;display:none"></div>
+        </div>
+
         <div class="form-group"><label class="form-label">Notificar com antecedência</label>
           <select class="form-input form-select" id="f-advance">
             <option value="0">No horário</option><option value="5">5 minutos antes</option>
@@ -418,6 +432,7 @@
   <script src="/public/js/app.js?v=1781519873"></script>
 </body>
 </html>
+
 
 
 
