@@ -270,22 +270,32 @@ async function showApp() {
   const meta     = currentUser.user_metadata || {};
   const name     = meta.full_name || meta.name || currentUser.email.split('@')[0];
   const email    = currentUser.email;
-  const initials = name.slice(0, 2).toUpperCase();
   const provider = currentUser.app_metadata?.provider || '';
   const badge    = provider === 'google'
     ? '<span style="font-size:10px;background:#4285F420;color:#4285F4;padding:2px 7px;border-radius:20px;margin-left:6px">Google</span>'
     : '';
 
-  document.getElementById('user-avatar').textContent    = initials;
+  applyAvatar(document.getElementById('user-avatar'), name, meta.avatar_url);
   document.getElementById('user-name').innerHTML        = name + badge;
   document.getElementById('user-email').textContent     = email;
-  document.getElementById('profile-avatar').textContent = initials;
-  document.getElementById('profile-name').innerHTML     = name + badge;
   document.getElementById('profile-email').textContent  = email;
 
   restoreSidebarState();
   await loadReminders();
   checkPermBanner();
+}
+
+// --------------------------------------------------
+//  Avatar — exibe foto de perfil ou iniciais
+// --------------------------------------------------
+function applyAvatar(el, name, avatarUrl) {
+  if (!el) return;
+  const initials = (name || '?').slice(0, 2).toUpperCase();
+  if (avatarUrl) {
+    el.innerHTML = `<img src="${avatarUrl}" alt="Foto de perfil" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+  } else {
+    el.textContent = initials;
+  }
 }
 
 // --------------------------------------------------
@@ -371,8 +381,161 @@ function translateError(msg) {
   }[msg] || msg;
 }
 
-function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
+// --------------------------------------------------
+//  Modal de perfil — abrir/fechar + popular campos
+// --------------------------------------------------
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024; // 2MB
+
+function openProfileModal() {
+  const meta = currentUser.user_metadata || {};
+  const name = meta.full_name || meta.name || currentUser.email.split('@')[0];
+
+  applyAvatar(document.getElementById('profile-avatar'), name, meta.avatar_url);
+  document.getElementById('profile-name-input').value = name;
+  document.getElementById('profile-email').textContent = currentUser.email;
+  document.getElementById('profile-new-password').value  = '';
+  document.getElementById('profile-new-password2').value = '';
+  document.getElementById('profile-error').style.display = 'none';
+  document.getElementById('avatar-upload-status').style.display = 'none';
+
+  document.getElementById('profile-modal').classList.add('show');
+}
+
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
+
+function showProfileError(msg, type = 'error') {
+  const el = document.getElementById('profile-error');
+  el.textContent = msg; el.style.display = 'block';
+  const s = {
+    error:   { bg:'rgba(226,75,74,0.12)',  border:'var(--danger)',  color:'var(--danger)'  },
+    success: { bg:'rgba(34,201,122,0.12)', border:'var(--success)', color:'var(--success)' },
+  }[type] || {};
+  el.style.background = s.bg; el.style.borderColor = s.border; el.style.color = s.color;
+}
+
+// --------------------------------------------------
+//  Upload de foto de perfil (Supabase Storage)
+// --------------------------------------------------
+async function handleAvatarUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const statusEl = document.getElementById('avatar-upload-status');
+  statusEl.style.display = 'block';
+
+  // Validação de tipo
+  if (!file.type.startsWith('image/')) {
+    statusEl.textContent = 'Selecione apenas arquivos de imagem.';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+
+  // Validação de tamanho — máximo 2MB
+  if (file.size > AVATAR_MAX_BYTES) {
+    const sizeMb = (file.size / (1024*1024)).toFixed(1);
+    statusEl.textContent = `Imagem muito grande (${sizeMb}MB). Máximo permitido: 2MB.`;
+    statusEl.style.color = 'var(--danger)';
+    event.target.value = '';
+    return;
+  }
+
+  statusEl.textContent = 'Enviando...';
+  statusEl.style.color = 'var(--text2)';
+
+  try {
+    const ext      = file.name.split('.').pop().toLowerCase();
+    const filePath = `${currentUser.id}/avatar.${ext}`;
+
+    // Upload para o bucket "avatars" (upsert substitui foto anterior)
+    const { error: uploadError } = await sb.storage
+      .from('avatars')
+      .upload(filePath, file, { upsert: true, cacheControl: '3600' });
+
+    if (uploadError) throw uploadError;
+
+    // Gera URL pública com cache-busting
+    const { data: urlData } = sb.storage.from('avatars').getPublicUrl(filePath);
+    const avatarUrl = urlData.publicUrl + '?t=' + Date.now();
+
+    // Salva a URL no metadata do usuário
+    const { error: updateError } = await sb.auth.updateUser({
+      data: { avatar_url: avatarUrl }
+    });
+    if (updateError) throw updateError;
+
+    // Atualiza currentUser local e UI
+    currentUser.user_metadata = { ...currentUser.user_metadata, avatar_url: avatarUrl };
+    const name = currentUser.user_metadata.full_name || currentUser.user_metadata.name || currentUser.email.split('@')[0];
+    applyAvatar(document.getElementById('profile-avatar'), name, avatarUrl);
+    applyAvatar(document.getElementById('user-avatar'), name, avatarUrl);
+
+    statusEl.textContent = '✓ Foto atualizada!';
+    statusEl.style.color = 'var(--success)';
+    setTimeout(() => { statusEl.style.display = 'none'; }, 2500);
+  } catch (e) {
+    console.error('Erro ao enviar avatar:', e);
+    statusEl.textContent = 'Erro ao enviar imagem. Tente novamente.';
+    statusEl.style.color = 'var(--danger)';
+  } finally {
+    event.target.value = '';
+  }
+}
+
+// --------------------------------------------------
+//  Atualizar nome
+// --------------------------------------------------
+async function saveProfileName() {
+  const name = document.getElementById('profile-name-input').value.trim();
+  if (!name) return showProfileError('Digite um nome.');
+
+  const btn = document.getElementById('save-name-btn');
+  btn.disabled = true;
+
+  const { error } = await sb.auth.updateUser({ data: { full_name: name } });
+
+  btn.disabled = false;
+
+  if (error) return showProfileError('Erro ao salvar nome: ' + error.message);
+
+  // Atualiza UI imediatamente
+  currentUser.user_metadata = { ...currentUser.user_metadata, full_name: name };
+  const provider = currentUser.app_metadata?.provider || '';
+  const badge = provider === 'google'
+    ? '<span style="font-size:10px;background:#4285F420;color:#4285F4;padding:2px 7px;border-radius:20px;margin-left:6px">Google</span>'
+    : '';
+  document.getElementById('user-name').innerHTML = name + badge;
+  applyAvatar(document.getElementById('profile-avatar'), name, currentUser.user_metadata.avatar_url);
+  applyAvatar(document.getElementById('user-avatar'), name, currentUser.user_metadata.avatar_url);
+
+  showProfileError('Nome atualizado com sucesso!', 'success');
+  setTimeout(() => { document.getElementById('profile-error').style.display = 'none'; }, 2000);
+}
+
+// --------------------------------------------------
+//  Atualizar senha (usuário logado)
+// --------------------------------------------------
+async function saveProfilePassword() {
+  const pass  = document.getElementById('profile-new-password').value;
+  const pass2 = document.getElementById('profile-new-password2').value;
+
+  if (!pass)           return showProfileError('Digite a nova senha.');
+  if (pass.length < 6) return showProfileError('A senha deve ter pelo menos 6 caracteres.');
+  if (pass !== pass2)  return showProfileError('As senhas não coincidem.');
+
+  const btn = document.getElementById('save-password-btn');
+  btn.disabled = true;
+
+  const { error } = await sb.auth.updateUser({ password: pass });
+
+  btn.disabled = false;
+
+  if (error) return showProfileError('Erro ao atualizar senha: ' + error.message);
+
+  document.getElementById('profile-new-password').value  = '';
+  document.getElementById('profile-new-password2').value = '';
+  showProfileError('Senha atualizada com sucesso!', 'success');
+}
+
 
 
 
