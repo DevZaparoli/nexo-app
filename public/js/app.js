@@ -503,7 +503,7 @@ function toggleWeekdays() {
 function selectSound(s, el) {
   selectedSound = s;
   updateSoundChips();
-  playSound(s); // toca prévia imediatamente
+  playSound(s, 1); // toca prévia uma única vez
 
   if (el) {
     el.classList.remove('playing');
@@ -869,6 +869,7 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   ENTER_SUBMIT_MAP[id]();
 });
+
 
 
 
