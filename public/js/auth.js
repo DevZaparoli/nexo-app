@@ -9,35 +9,25 @@ let appInitialized = false; // evita showApp() duplo na inicialização
 //  INICIALIZAÇÃO — lê sessão do localStorage primeiro
 //  antes de qualquer evento do onAuthStateChange
 // --------------------------------------------------
-// Timeout de segurança absoluto — garante que o loading nunca trave para sempre
+// Timeout de segurança absoluto — garante que o loading nunca trave para sempre.
+// NUNCA chama showAuth()/logout aqui: se a sessão já foi confirmada (currentUser setado),
+// apenas esconde o loading e deixa showApp() terminar em background.
 const bootSafetyTimeout = setTimeout(() => {
   if (!appInitialized) {
-    console.warn('Boot demorou demais, forçando tela de login.');
+    console.warn('Boot demorou demais (>15s). Ocultando loading sem deslogar.');
     hideLoadingScreen();
-    showAuth();
+    if (!currentUser) showAuth();
     appInitialized = true;
   }
-}, 6000);
+}, 15000);
 
 (async () => {
   showLoadingScreen();
-
-  // === DEBUG TEMPORÁRIO ===
-  try {
-    const lsKeys = Object.keys(localStorage).filter(k => k.includes('nexo') || k.includes('supabase') || k.includes('sb-'));
-    console.log('[NEXO DEBUG] Chaves no localStorage:', lsKeys);
-    lsKeys.forEach(k => {
-      const val = localStorage.getItem(k);
-      console.log('[NEXO DEBUG]', k, '=', val ? val.slice(0, 150) + '...' : null);
-    });
-  } catch(e) { console.error('[NEXO DEBUG] erro lendo localStorage:', e); }
-  // === FIM DEBUG ===
 
   let session = null;
   try {
     const result = await sb.auth.getSession();
     session = result?.data?.session || null;
-    console.log('[NEXO DEBUG] getSession() resultado:', result);
   } catch (e) {
     console.error('Erro ao recuperar sessão:', e);
   }
@@ -51,7 +41,9 @@ const bootSafetyTimeout = setTimeout(() => {
     }
   } catch (e) {
     console.error('Erro ao montar tela inicial:', e);
-    showAuth();
+    // Só volta para login se NÃO houver sessão válida —
+    // erros de UI/rede após confirmar a sessão não devem deslogar
+    if (!currentUser) showAuth();
   } finally {
     clearTimeout(bootSafetyTimeout);
     hideLoadingScreen();
@@ -369,6 +361,7 @@ function translateError(msg) {
 
 function openProfileModal()  { document.getElementById('profile-modal').classList.add('show'); }
 function closeProfileModal() { document.getElementById('profile-modal').classList.remove('show'); }
+
 
 
 
