@@ -36,19 +36,30 @@ async function registerSW() {
 
 async function loadReminders() {
   showLoading(true);
-  const { data, error } = await sb
-    .from('reminders')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .order('reminder_at', { ascending: true });
+  try {
+    const { data, error } = await sb
+      .from('reminders')
+      .select('*')
+      .eq('user_id', currentUser.id)
+      .order('reminder_at', { ascending: true });
 
-  showLoading(false);
-  if (error) { console.error(error); return; }
+    if (error) {
+      console.error('Erro ao carregar lembretes:', error);
+      showToast('Erro de conexão', 'Não foi possível carregar seus lembretes agora.');
+      return;
+    }
 
-  reminders = (data || []).map(dbToLocal);
-  renderList();
-  scheduleAllNotifications();
-  startAutoCheck();
+    reminders = (data || []).map(dbToLocal);
+    renderList();
+    scheduleAllNotifications();
+    startAutoCheck();
+  } catch (e) {
+    // Falha de rede (ex: Tracking Prevention bloqueando fetch) — não deslogar
+    console.error('Falha de rede ao carregar lembretes:', e);
+    showToast('Erro de conexão', 'Não foi possível carregar seus lembretes agora.');
+  } finally {
+    showLoading(false);
+  }
 }
 
 async function insertReminder(r) {
@@ -804,6 +815,7 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 
 // Init SW ao carregar
 registerSW();
+
 
 
 
