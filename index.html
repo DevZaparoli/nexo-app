@@ -42,11 +42,11 @@
       <div id="tab-login">
         <div class="form-group">
           <label class="form-label">E-mail</label>
-          <input class="form-input" type="email" id="login-email" placeholder="voce@email.com">
+          <input class="form-input" type="email" id="login-email" placeholder="voce@email.com" tabindex="1">
         </div>
         <div class="form-group">
           <label class="form-label">Senha</label>
-          <input class="form-input" type="password" id="login-password" placeholder="••••••••">
+          <input class="form-input" type="password" id="login-password" placeholder="••••••••" tabindex="2">
         </div>
         <button class="btn btn-primary w-full" onclick="loginEmail()">
           <i class="ti ti-login"></i> Entrar
@@ -237,9 +237,12 @@
 
         <div class="form-group"><label class="form-label">Notificar com antecedência</label>
           <select class="form-input form-select" id="f-advance">
-            <option value="0">No horário</option><option value="5">5 minutos antes</option>
-            <option value="15">15 minutos antes</option><option value="30">30 minutos antes</option>
-            <option value="60">1 hora antes</option>
+            <option value="0">No horário</option>
+            <option value="5">No horário + 5 min antes</option>
+            <option value="15">No horário + 15 min antes</option>
+            <option value="30">No horário + 30 min antes</option>
+            <option value="60">No horário + 1 hora antes</option>
+            <option value="1440">No horário + 1 dia antes</option>
           </select>
         </div>
       </div>
@@ -432,6 +435,7 @@
   <script src="/public/js/app.js?v=1781519873"></script>
 </body>
 </html>
+
 
 
 
