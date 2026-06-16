@@ -119,8 +119,28 @@ async function deleteReminderDb(id) {
 //  CONVERSÃO local ↔ DB
 // =====================================================
 
+// Formata data/hora em hora local (evita shift de fuso UTC)
+function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function localTimeStr(d) {
+  const h = String(d.getHours()).padStart(2,'0');
+  const min = String(d.getMinutes()).padStart(2,'0');
+  return `${h}:${min}`;
+}
+
 function localToDb(r) {
-  const dt = r.date && r.time ? new Date(r.date + 'T' + r.time).toISOString() : null;
+  // Constrói a data no fuso local (evita conversão automática para UTC)
+  let dt = null;
+  if (r.date && r.time) {
+    const [year, month, day] = r.date.split('-').map(Number);
+    const [hour, min] = r.time.split(':').map(Number);
+    const d = new Date(year, month - 1, day, hour, min, 0);
+    dt = d.toISOString(); // armazena como UTC correto a partir da hora local
+  }
   return {
     user_id:      currentUser.id,
     title:        r.title,
@@ -143,8 +163,8 @@ function dbToLocal(row) {
     id:        row.id,
     title:     row.title,
     desc:      row.description || '',
-    date:      dt ? dt.toISOString().slice(0,10) : '',
-    time:      dt ? dt.toTimeString().slice(0,5) : '',
+    date:      dt ? localDateStr(dt) : '',  // hora local, não UTC
+    time:      dt ? localTimeStr(dt) : '',  // hora local, não UTC
     cat:       row.category || 'Pessoal',
     priority:  row.priority || 'normal',
     repeat:    row.repeat_type || 'none',
@@ -870,8 +890,8 @@ async function scheduleNextOccurrence(r) {
   const nextLocal = {
     ...r,
     id:   null, // novo registro
-    date: next.toISOString().slice(0,10),
-    time: next.toTimeString().slice(0,5),
+    date: localDateStr(next),  // hora local, não UTC
+    time: localTimeStr(next),
     done: false,
   };
 
@@ -891,51 +911,56 @@ function clearNotifTimers(id) {
   if (swReg?.active) swReg.active.postMessage({ type: 'CANCEL', id });
 }
 
+function fireAlert(r, label) {
+  const body = label
+    ? `⏰ ${label}: ${r.desc || r.title}`
+    : r.desc || 'Hora do seu lembrete!';
+
+  if ('Notification' in window && Notification.permission === 'granted') {
+    try {
+      new Notification('Nexo: ' + r.title, {
+        body, icon:'/public/icons/icon-192.png',
+        tag:'reminder-' + r.id + (label||''), requireInteraction: true
+      });
+    } catch(e) {}
+  }
+
+  showInAppNotif(r.id, r.title, body);
+  playSound(r.sound);
+}
+
 function scheduleNotification(r) {
   // Sempre limpa timers antigos primeiro — evita duplicar notificação ao editar
   clearNotifTimers(r.id);
 
   if (r.done || !r.date || !r.time) return;
 
-  const dt      = new Date(r.date + 'T' + r.time);
-  const trigger = new Date(dt.getTime() - r.advance * 60000);
-  const delay   = trigger - Date.now();
+  const dt    = new Date(r.date + 'T' + r.time);
+  const now   = Date.now();
+  const ids   = [];
 
-  if (delay <= 0) return;
-
-  // 1. Service Worker — notificação nativa em background
-  if (swReg?.active && Notification.permission === 'granted') {
-    swReg.active.postMessage({ type:'SCHEDULE', id:r.id, title:r.title, body:r.desc||'Hora do seu lembrete!', delay });
+  // Alerta de antecedência (se advance > 0)
+  if (r.advance > 0) {
+    const advanceDelay = dt.getTime() - r.advance * 60000 - now;
+    if (advanceDelay > 0) {
+      const advLabel = r.advance >= 60
+        ? `${r.advance / 60}h antes`
+        : `${r.advance}min antes`;
+      ids.push(setTimeout(() => fireAlert(r, advLabel), advanceDelay));
+    }
   }
 
-  // 2. setTimeout — garante disparo com aba aberta (independe de permissão)
-  const timeoutId = setTimeout(() => {
-    const body = r.desc || 'Hora do seu lembrete!';
+  // Alerta no horário exato (sempre)
+  const onTimeDelay = dt.getTime() - now;
+  if (onTimeDelay > 0) {
+    ids.push(setTimeout(() => {
+      fireAlert(r, null);
+      delete notifTimers[r.id];
+      scheduleNextOccurrence(r); // recria próxima ocorrência se repetitivo
+    }, onTimeDelay));
+  }
 
-    // Notificação nativa (se tiver permissão)
-    if ('Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification('Nexo: ' + r.title, {
-          body, icon:'/public/icons/icon-192.png',
-          tag:'reminder-' + r.id, requireInteraction: true
-        });
-      } catch(e) {}
-    }
-
-    // Painel in-app — SEMPRE dispara independente de permissão ou sistema
-    showInAppNotif(r.id, r.title, body);
-
-    // Som
-    playSound(r.sound);
-
-    // Limpa o registro após disparar
-    delete notifTimers[r.id];
-
-    // Se for repetitivo, agenda a próxima ocorrência
-    scheduleNextOccurrence(r);
-  }, Math.max(delay, 0));
-
-  notifTimers[r.id] = [timeoutId];
+  if (ids.length) notifTimers[r.id] = ids;
 }
 
 function playSound(type, repeat = 3) {
@@ -1008,7 +1033,7 @@ registerSW();
 
 const ENTER_SUBMIT_MAP = {
   'login-password':         () => loginEmail(),
-  'login-email':            () => loginEmail(),
+  'login-email':            () => document.getElementById('login-password')?.focus(),
   'reg-password':           () => registerEmail(),
   'reg-email':              () => document.getElementById('reg-password')?.focus(),
   'reg-name':               () => document.getElementById('reg-email')?.focus(),
@@ -1030,6 +1055,7 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   ENTER_SUBMIT_MAP[id]();
 });
+
 
 
 
