@@ -1021,11 +1021,46 @@ function showToast(title, body) {
   document.getElementById('toast-title').textContent = title;
   document.getElementById('toast-body').textContent  = body;
   const t = document.getElementById('toast');
+  t.classList.remove('undo-toast');
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 5000);
 }
 function closeToast() { document.getElementById('toast').classList.remove('show'); }
+
+function showUndoToast(title) {
+  clearTimeout(toastTimer);
+  closeUndoToast();
+
+  const t = document.getElementById('toast');
+  document.getElementById('toast-title').textContent = `"${title}" excluído`;
+  document.getElementById('toast-body').innerHTML =
+    `<button onclick="undoDelete()" style="background:var(--signal);color:var(--ink-0);border:none;border-radius:var(--radius-xs);padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;margin-top:6px;font-family:var(--font-body)">↩ Desfazer</button>`;
+
+  t.classList.add('show', 'undo-toast');
+
+  // Barra de progresso
+  const bar = document.getElementById('undo-progress');
+  if (bar) {
+    bar.style.transition = 'none';
+    bar.style.width = '100%';
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      bar.style.transition = 'width 5s linear';
+      bar.style.width = '0%';
+    }));
+  }
+
+  toastTimer = setTimeout(() => {
+    t.classList.remove('show', 'undo-toast');
+    undoState = null;
+  }, 5000);
+}
+
+function closeUndoToast() {
+  const t = document.getElementById('toast');
+  t.classList.remove('show', 'undo-toast');
+  clearTimeout(toastTimer);
+}
 
 // Init SW ao carregar
 registerSW();
@@ -1206,6 +1241,7 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   ENTER_SUBMIT_MAP[id]();
 });
+
 
 
 
