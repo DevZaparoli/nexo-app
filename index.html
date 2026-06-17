@@ -393,11 +393,14 @@
   <!-- TOAST -->
   <div class="notif-toast" id="toast">
     <div class="toast-head">
-      <div class="toast-icon"><i class="ti ti-bell"></i></div>
+      <div class="toast-icon" id="toast-icon"><i class="ti ti-bell"></i></div>
       <span class="toast-title" id="toast-title">Lembrete!</span>
       <span class="toast-close" onclick="closeToast()"><i class="ti ti-x"></i></span>
     </div>
     <div class="toast-body" id="toast-body"></div>
+    <div style="height:2px;background:var(--ink-4);margin-top:10px;border-radius:2px;overflow:hidden">
+      <div id="undo-progress" style="height:100%;background:var(--signal);width:0%"></div>
+    </div>
   </div>
 
 
@@ -484,6 +487,7 @@
   <script src="/public/js/app.js?v=1781519873"></script>
 </body>
 </html>
+
 
 
 
