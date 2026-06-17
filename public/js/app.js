@@ -208,7 +208,7 @@ async function autoMarkDone(id) {
   clearNotifTimers(r.id);
 
   if (r.repeat !== 'none') {
-    await scheduleNextOccurrence(r);
+    await scheduleNextOccurrence(r, 'completed');
   }
 
   showToast('✅ ' + r.title, 'Marcado como concluído automaticamente');
@@ -382,9 +382,8 @@ async function toggleDone(id) {
 
   if (r.done) {
     clearNotifTimers(r.id);
-    // Se for repetitivo, cria a próxima ocorrência
     if (r.repeat !== 'none') {
-      await scheduleNextOccurrence(r);
+      await scheduleNextOccurrence(r, 'completed');
     }
   }
 }
@@ -883,24 +882,28 @@ function getNextOccurrenceDate(r) {
   return next;
 }
 
-async function scheduleNextOccurrence(r) {
+async function scheduleNextOccurrence(r, status = 'fired') {
+  // Grava o disparo atual no histórico
+  await insertLog(r.id, status);
+
+  // Calcula próxima data
   const next = getNextOccurrenceDate(r);
   if (!next) return;
 
-  const nextLocal = {
+  // Atualiza o MESMO lembrete com a próxima data (não cria novo)
+  const updated = {
     ...r,
-    id:   null, // novo registro
-    date: localDateStr(next),  // hora local, não UTC
+    date: localDateStr(next),
     time: localTimeStr(next),
     done: false,
   };
 
-  const saved = await insertReminder(nextLocal);
-  if (saved) {
-    reminders.push(saved);
-    scheduleNotification(saved);
-    renderList();
-  }
+  const idx = reminders.findIndex(x => x.id === r.id);
+  if (idx !== -1) reminders[idx] = updated;
+
+  await updateReminder(updated);
+  scheduleNotification(updated);
+  renderList();
 }
 
 function clearNotifTimers(id) {
@@ -1028,6 +1031,154 @@ function closeToast() { document.getElementById('toast').classList.remove('show'
 registerSW();
 
 // =====================================================
+//  REMINDER LOGS — histórico de disparos
+// =====================================================
+
+let currentHistoryReminderId = null;
+
+// --- DB ---
+async function insertLog(reminderId, status = 'fired', note = '', firedAt = null) {
+  try {
+    const { error } = await sb.from('reminder_logs').insert([{
+      reminder_id: reminderId,
+      user_id:     currentUser.id,
+      fired_at:    firedAt || new Date().toISOString(),
+      status,
+      note:        note || null,
+    }]);
+    if (error) console.error('Erro ao gravar log:', error);
+  } catch (e) {
+    console.error('Erro ao gravar log:', e);
+  }
+}
+
+async function fetchLogs(reminderId) {
+  try {
+    const { data, error } = await sb
+      .from('reminder_logs')
+      .select('*')
+      .eq('reminder_id', reminderId)
+      .order('fired_at', { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    return data || [];
+  } catch (e) {
+    console.error('Erro ao buscar logs:', e);
+    return [];
+  }
+}
+
+async function deleteLog(logId) {
+  try {
+    const { error } = await sb.from('reminder_logs').delete()
+      .eq('id', logId).eq('user_id', currentUser.id);
+    if (error) throw error;
+  } catch (e) {
+    console.error('Erro ao excluir log:', e);
+  }
+}
+
+// --- Modal ---
+function openHistoryModal(reminderId) {
+  const r = reminders.find(x => x.id === reminderId);
+  if (!r) return;
+
+  currentHistoryReminderId = reminderId;
+
+  document.getElementById('history-modal-title').textContent = r.title;
+  document.getElementById('history-modal-sub').textContent =
+    `${REPEAT_LABEL[r.repeat] || r.repeat} · ${r.cat}`;
+
+  // Pré-preenche data/hora com o próximo disparo esperado
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const dtLocal = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  document.getElementById('log-datetime').value = dtLocal;
+  document.getElementById('log-note').value = '';
+  document.getElementById('log-status').value = 'fired';
+
+  document.getElementById('history-modal').classList.add('show');
+  loadHistoryList(reminderId);
+}
+
+function closeHistoryModal() {
+  document.getElementById('history-modal').classList.remove('show');
+  currentHistoryReminderId = null;
+}
+
+async function loadHistoryList(reminderId) {
+  const el = document.getElementById('history-list');
+  el.innerHTML = `<div style="text-align:center;padding:24px;color:var(--paper-3);font-size:13px">
+    <i class="ti ti-loader" style="font-size:24px;display:block;margin-bottom:8px;animation:spin 1s linear infinite"></i>
+    Carregando...
+  </div>`;
+
+  const logs = await fetchLogs(reminderId);
+
+  if (!logs.length) {
+    el.innerHTML = `<div style="text-align:center;padding:24px;color:var(--paper-3);font-size:13px">
+      <i class="ti ti-history" style="font-size:28px;display:block;margin-bottom:8px"></i>
+      Nenhum disparo registrado ainda.
+    </div>`;
+    return;
+  }
+
+  const STATUS_CONFIG = {
+    completed: { icon: 'ti-circle-check',  color: 'var(--ok)',     label: 'Concluído' },
+    snoozed:   { icon: 'ti-clock',         color: 'var(--signal)', label: 'Adiado'    },
+    ignored:   { icon: 'ti-circle-x',      color: 'var(--err)',    label: 'Ignorado'  },
+    fired:     { icon: 'ti-bell',          color: 'var(--paper-2)',label: 'Disparado' },
+  };
+
+  el.innerHTML = logs.map(log => {
+    const dt   = new Date(log.fired_at);
+    const date = dt.toLocaleDateString('pt-BR', { day:'2-digit', month:'short', year:'numeric' });
+    const time = localTimeStr(dt);
+    const cfg  = STATUS_CONFIG[log.status] || STATUS_CONFIG.fired;
+
+    return `
+    <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:var(--ink-2);border:1px solid var(--line);border-radius:var(--radius-sm)">
+      <i class="ti ${cfg.icon}" style="font-size:18px;color:${cfg.color};flex-shrink:0;margin-top:1px"></i>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:${log.note ? '4px' : '0'}">
+          <span style="font-size:13px;font-weight:500;color:var(--paper-0)">${escHtml(date)} às ${escHtml(time)}</span>
+          <span style="font-size:11px;font-weight:600;color:${cfg.color};background:${cfg.color}18;padding:2px 8px;border-radius:20px">${cfg.label}</span>
+        </div>
+        ${log.note ? `<div style="font-size:12px;color:var(--paper-2)">${escHtml(log.note)}</div>` : ''}
+      </div>
+      <button class="icon-btn danger" onclick="removeLogEntry('${log.id}')" aria-label="Remover entrada" title="Remover">
+        <i class="ti ti-trash" style="font-size:14px"></i>
+      </button>
+    </div>`;
+  }).join('');
+}
+
+async function addLogEntry() {
+  if (!currentHistoryReminderId) return;
+
+  const status   = document.getElementById('log-status').value;
+  const note     = document.getElementById('log-note').value.trim();
+  const dtInput  = document.getElementById('log-datetime').value;
+  const firedAt  = dtInput ? new Date(dtInput).toISOString() : new Date().toISOString();
+
+  const btn = document.getElementById('add-log-btn');
+  btn.disabled = true;
+
+  await insertLog(currentHistoryReminderId, status, note, firedAt);
+
+  btn.disabled = false;
+  document.getElementById('log-note').value = '';
+  await loadHistoryList(currentHistoryReminderId);
+}
+
+async function removeLogEntry(logId) {
+  await deleteLog(logId);
+  if (currentHistoryReminderId) {
+    await loadHistoryList(currentHistoryReminderId);
+  }
+}
+
+// =====================================================
 //  ENTER PARA SUBMETER — mapeia campos a botões de ação
 // =====================================================
 
@@ -1055,6 +1206,7 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   ENTER_SUBMIT_MAP[id]();
 });
+
 
 
 
