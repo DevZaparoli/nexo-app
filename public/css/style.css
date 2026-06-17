@@ -714,3 +714,14 @@ textarea.form-input { resize: vertical; font-family: var(--font-body); }
   background: rgba(255,138,128,0.15);
   color: var(--err);
 }
+
+
+/* =====================================================
+   HISTÓRICO DE DISPAROS
+   ===================================================== */
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+#history-list::-webkit-scrollbar { width: 6px; }
+#history-list::-webkit-scrollbar-thumb { background: var(--ink-4); border-radius: 6px; }
+
+.reminder-card:has(.ti-history) .reminder-actions { opacity: 1; }
