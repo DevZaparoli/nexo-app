@@ -725,3 +725,15 @@ textarea.form-input { resize: vertical; font-family: var(--font-body); }
 #history-list::-webkit-scrollbar-thumb { background: var(--ink-4); border-radius: 6px; }
 
 .reminder-card:has(.ti-history) .reminder-actions { opacity: 1; }
+
+
+/* =====================================================
+   UNDO TOAST
+   ===================================================== */
+.notif-toast.undo-toast {
+  border-left: 2px solid var(--err);
+}
+.notif-toast.undo-toast .toast-icon {
+  background: rgba(255,138,128,0.12);
+  color: var(--err);
+}
