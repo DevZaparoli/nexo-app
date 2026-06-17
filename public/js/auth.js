@@ -242,6 +242,13 @@ function showResetError(msg) {
 //  Logout
 // --------------------------------------------------
 async function logout() {
+  // Confirma delete pendente (undo) antes de deslogar
+  if (typeof undoState !== 'undefined' && undoState) {
+    clearTimeout(undoState.timer);
+    await deleteReminderDb(undoState.reminder.id);
+    undoState = null;
+  }
+
   // Limpa todos os timers de notificação pendentes antes de deslogar
   if (typeof notifTimers !== 'undefined') {
     Object.keys(notifTimers).forEach(id => clearNotifTimers(id));
@@ -535,6 +542,7 @@ async function saveProfilePassword() {
   document.getElementById('profile-new-password2').value = '';
   showProfileError('Senha atualizada com sucesso!', 'success');
 }
+
 
 
 
