@@ -304,6 +304,7 @@ function renderList() {
         </div>
       </div>
       <div class="reminder-actions">
+        ${r.repeat !== 'none' ? `<button class="icon-btn" onclick="openHistoryModal('${r.id}')" aria-label="Histórico" title="Ver histórico de disparos"><i class="ti ti-history"></i></button>` : ''}
         <button class="icon-btn" onclick="editReminder('${r.id}')" aria-label="Editar"><i class="ti ti-edit"></i></button>
         <button class="icon-btn danger" onclick="deleteReminder('${r.id}')" aria-label="Excluir"><i class="ti ti-trash"></i></button>
       </div>
@@ -388,11 +389,54 @@ async function toggleDone(id) {
   }
 }
 
+// =====================================================
+//  UNDO DELETE — janela de 5s para desfazer exclusão
+// =====================================================
+let undoState = null; // { reminder, timer }
+
 async function deleteReminder(id) {
+  const r = reminders.find(x => x.id === id);
+  if (!r) return;
+
+  // Cancela undo pendente anterior (confirma delete anterior)
+  if (undoState) {
+    clearTimeout(undoState.timer);
+    await deleteReminderDb(undoState.reminder.id);
+    undoState = null;
+  }
+
+  // Remove da lista visual imediatamente
   reminders = reminders.filter(x => x.id !== id);
-  renderList();
   clearNotifTimers(id);
-  await deleteReminderDb(id);
+  renderList();
+
+  // Mostra toast com botão desfazer
+  showUndoToast(r.title);
+
+  // Agenda delete real após 5s
+  const timer = setTimeout(async () => {
+    if (undoState?.reminder.id === id) {
+      await deleteReminderDb(id);
+      undoState = null;
+    }
+  }, 5000);
+
+  undoState = { reminder: r, timer };
+}
+
+function undoDelete() {
+  if (!undoState) return;
+  clearTimeout(undoState.timer);
+
+  // Restaura o lembrete na lista
+  reminders.push(undoState.reminder);
+  reminders.sort((a, b) => new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time));
+  scheduleNotification(undoState.reminder);
+  renderList();
+
+  undoState = null;
+  closeUndoToast();
+  showToast('Lembrete restaurado', 'O lembrete foi recuperado com sucesso.');
 }
 
 // =====================================================
@@ -1241,6 +1285,7 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   ENTER_SUBMIT_MAP[id]();
 });
+
 
 
 
