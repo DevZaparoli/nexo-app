@@ -1096,7 +1096,9 @@ function showUndoToast(title) {
 
   toastTimer = setTimeout(() => {
     t.classList.remove('show', 'undo-toast');
-    undoState = null;
+    // NÃO mexe em undoState aqui — quem confirma o delete é o timer
+    // criado em deleteReminder(). Mexer aqui causava o bug do lembrete
+    // "voltar sozinho": a exclusão real no banco nunca acontecia.
   }, 5000);
 }
 
@@ -1285,6 +1287,7 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   ENTER_SUBMIT_MAP[id]();
 });
+
 
 
 
