@@ -4,6 +4,7 @@
 
 const SUPABASE_URL      = 'https://cetsgcfqwvrcqplzopxg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNldHNnY2Zxd3ZyY3FwbHpvcHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMDAyOTcsImV4cCI6MjA5Njc3NjI5N30.8Am8bba6apa4cudeV8qf8rNyw43Ira99mCuBqE5VjxQ';
+const IS_NEXO_DESKTOP   = Boolean(window.__TAURI_INTERNALS__);
 
 const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -12,6 +13,7 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     storageKey:        'nexo-session',// chave única no localStorage
     storage:           window.localStorage,
     autoRefreshToken:  true,          // renova o token automaticamente
-    detectSessionInUrl: true,         // detecta sessão na URL (OAuth/reset)
+    detectSessionInUrl: !IS_NEXO_DESKTOP, // desktop usará callback nativo dedicado
+    flowType:          IS_NEXO_DESKTOP ? 'pkce' : 'implicit',
   }
 });

@@ -1,0 +1,56 @@
+name: Build Nexo Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/desktop-app
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate audio flow
+        run: pnpm check:audio
+
+      - name: Build installer
+        run: pnpm desktop:build
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nexo-0.2.8-Windows
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

@@ -1,0 +1,25 @@
+{
+  "name": "nexo-desktop",
+  "private": true,
+  "version": "0.2.8",
+  "description": "Nexo desktop reminder application",
+  "type": "module",
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "check:oauth": "node scripts/check-oauth.mjs",
+    "check:audio": "node scripts/check-audio.mjs",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.112.4"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.19.0"
+}

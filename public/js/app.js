@@ -13,12 +13,15 @@ let currentFilter = 'all';
 let selectedSound = 'padrão';
 let swReg         = null;
 let autoCheckInterval = null;
+const IS_DESKTOP_APP = window.nexoDesktop?.available === true;
+const pendingDesktopReminderEvents = [];
 
 // =====================================================
 //  SERVICE WORKER
 // =====================================================
 
 async function registerSW() {
+  if (IS_DESKTOP_APP) return;
   if (!('serviceWorker' in navigator)) return;
   try {
     swReg = await navigator.serviceWorker.register('/sw.js');
@@ -49,7 +52,9 @@ async function loadReminders(retryCount = 0) {
 
     reminders = (data || []).map(dbToLocal);
     renderList();
-    scheduleAllNotifications();
+    warmCustomSoundsForReminders();
+    await scheduleAllNotifications();
+    await processPendingDesktopReminderEvents();
     startAutoCheck();
     showLoading(false);
   } catch (e) {
@@ -181,6 +186,9 @@ function dbToLocal(row) {
 // =====================================================
 
 function startAutoCheck() {
+  // No desktop, disparar um lembrete não significa concluí-lo. O scheduler
+  // nativo persiste os alertas e o usuário decide quando marcar como feito.
+  if (IS_DESKTOP_APP) return;
   if (autoCheckInterval) clearInterval(autoCheckInterval);
   autoCheckInterval = setInterval(checkOverdueReminders, 30000); // a cada 30s
   checkOverdueReminders(); // roda imediatamente
@@ -218,7 +226,7 @@ async function autoMarkDone(id) {
 //  RENDERIZAÇÃO
 // =====================================================
 
-function getToday() { return new Date().toISOString().slice(0,10); }
+function getToday() { return localDateStr(new Date()); }
 function isOverdue(r) {
   if (r.done || !r.date) return false;
   return new Date(r.date + 'T' + (r.time || '23:59')) < new Date();
@@ -592,6 +600,104 @@ function updateSoundChips() {
 const CUSTOM_SOUND_MAX_BYTES = 5 * 1024 * 1024; // 5MB
 const CUSTOM_SOUND_MAX_COUNT = 3;
 let customSounds = []; // [{ id, name, url, path }]
+const customSoundCache = new Map(); // id -> { sourceUrl, objectUrl }
+const customSoundLoads = new Map(); // id -> Promise<objectUrl|string|null>
+
+function parseCustomSound(type) {
+  if (!type?.startsWith('custom:')) return null;
+  const separator = type.indexOf('|');
+  return {
+    id: type.slice(7, separator === -1 ? undefined : separator),
+    storedUrl: separator === -1 ? '' : type.slice(separator + 1),
+  };
+}
+
+function getCustomSoundSources(type) {
+  const parsed = parseCustomSound(type);
+  if (!parsed?.id) return [];
+
+  const urls = [];
+  const addUrl = url => {
+    if (url && !urls.includes(url)) urls.push(url);
+  };
+
+  const loaded = customSounds.find(sound => sound.id === parsed.id);
+  addUrl(loaded?.url);
+
+  // Reconstrói primeiro a URL pública atual. Assim, lembretes criados na web
+  // continuam funcionando mesmo que a URL gravada anteriormente tenha mudado.
+  if (currentUser?.id) {
+    const path = `${currentUser.id}/${parsed.id}`;
+    const { data } = sb.storage.from('custom-sounds').getPublicUrl(path);
+    addUrl(data?.publicUrl);
+  }
+
+  addUrl(parsed.storedUrl);
+  return urls.map(url => ({ id: parsed.id, url }));
+}
+
+async function prepareCustomSound(type) {
+  const sources = getCustomSoundSources(type);
+  if (!sources.length) return null;
+
+  const cached = customSoundCache.get(sources[0].id);
+  const cachedSource = sources.find(source => cached?.sourceUrl === source.url);
+  if (cachedSource) return cached.objectUrl;
+
+  const soundId = sources[0].id;
+  const activeLoad = customSoundLoads.get(soundId);
+  if (activeLoad) return activeLoad;
+
+  const loadPromise = (async () => {
+    for (const source of sources) {
+      const controller = new AbortController();
+      const abortTimer = setTimeout(() => controller.abort(), 5_000);
+      try {
+        const response = await fetch(source.url, {
+          cache: 'force-cache',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+
+        if (cached?.objectUrl) URL.revokeObjectURL(cached.objectUrl);
+        customSoundCache.set(source.id, { sourceUrl: source.url, objectUrl });
+        return objectUrl;
+      } catch (error) {
+        console.warn('Não foi possível pré-carregar uma origem do som personalizado:', error);
+      } finally {
+        clearTimeout(abortTimer);
+      }
+    }
+
+    // O elemento <audio> ainda pode reproduzir a URL quando apenas o fetch foi
+    // limitado por CORS. Se a reprodução também falhar, há fallback sonoro.
+    return sources[0].url;
+  })();
+
+  customSoundLoads.set(soundId, loadPromise);
+  try {
+    return await loadPromise;
+  } finally {
+    if (customSoundLoads.get(soundId) === loadPromise) {
+      customSoundLoads.delete(soundId);
+    }
+  }
+}
+
+function warmCustomSoundsForReminders() {
+  const sounds = [...new Set(
+    reminders
+      .filter(reminder => !reminder.done && reminder.sound?.startsWith('custom:'))
+      .map(reminder => reminder.sound)
+  )];
+  sounds.forEach(sound => {
+    prepareCustomSound(sound).catch(error => {
+      console.warn('Erro ao preparar áudio do lembrete:', error);
+    });
+  });
+}
 
 async function loadCustomSounds() {
   try {
@@ -713,6 +819,11 @@ async function deleteCustomSound(path) {
       selectedSound = 'padrão';
     }
 
+    const soundId = path.split('/').pop();
+    const cached = customSoundCache.get(soundId);
+    if (cached?.objectUrl) URL.revokeObjectURL(cached.objectUrl);
+    customSoundCache.delete(soundId);
+
     await loadCustomSounds();
     showToast('Som removido', 'O som personalizado foi excluído.');
   } catch (e) {
@@ -804,13 +915,31 @@ function playTones(ctx, freqs, step, vol, type = 'triangle') {
 //  NOTIFICAÇÕES PUSH via Service Worker
 // =====================================================
 
-function checkPermBanner() {
+async function checkPermBanner() {
+  if (IS_DESKTOP_APP) {
+    // O Windows gerencia a permissão fora do WebView. Não exibir novamente
+    // o banner de navegador a cada abertura do aplicativo.
+    document.getElementById('perm-banner').style.display = 'none';
+    return;
+  }
   if (!('Notification' in window)) return;
   document.getElementById('perm-banner').style.display =
     Notification.permission === 'default' ? 'flex' : 'none';
 }
 
 async function requestNotifPerm() {
+  if (IS_DESKTOP_APP) {
+    try {
+      document.getElementById('perm-banner').style.display = 'none';
+      showToast('Notificações ativas!', 'O Nexo usará as notificações nativas do Windows.');
+      await scheduleAllNotifications();
+    } catch (error) {
+      console.error('Erro ao ativar notificações desktop:', error);
+      showToast('Erro', 'Não foi possível ativar as notificações do Windows.');
+    }
+    return;
+  }
+
   const perm = await Notification.requestPermission();
   document.getElementById('perm-banner').style.display = 'none';
   if (perm === 'granted') {
@@ -820,7 +949,16 @@ async function requestNotifPerm() {
   }
 }
 
-function scheduleAllNotifications() {
+async function scheduleAllNotifications() {
+  if (IS_DESKTOP_APP) {
+    if (!currentUser?.id) return;
+    try {
+      await window.nexoDesktop.syncReminders(reminders, currentUser.id);
+    } catch (error) {
+      console.error('Erro ao sincronizar agenda desktop:', error);
+    }
+    return;
+  }
   reminders.forEach(r => scheduleNotification(r));
 }
 
@@ -830,10 +968,14 @@ function scheduleAllNotifications() {
 
 let inappCurrentId = null;
 let inappAutoClose = null;
+let inappHideTimer = null;
+let inappGeneration = 0;
 const snoozedIds = new Set(); // IDs adiados — não marcar como feito automaticamente
 const notifTimers = {}; // id -> [timeoutId, ...] para poder cancelar
 
 function showInAppNotif(id, title, body) {
+  inappGeneration += 1;
+  clearTimeout(inappHideTimer);
   inappCurrentId = id;
   document.getElementById('inapp-title').textContent = title;
   document.getElementById('inapp-body').textContent  = body;
@@ -841,6 +983,7 @@ function showInAppNotif(id, title, body) {
   const panel = document.getElementById('inapp-notif');
   panel.classList.remove('hiding');
   panel.style.display = 'block';
+  panel.setAttribute('aria-hidden', 'false');
 
   // Barra de progresso — fecha automaticamente em 12s
   const bar = document.getElementById('inapp-progress');
@@ -859,8 +1002,26 @@ function showInAppNotif(id, title, body) {
 function closeInAppNotif() {
   clearTimeout(inappAutoClose);
   const panel = document.getElementById('inapp-notif');
+  if (panel.style.display === 'none') {
+    inappCurrentId = null;
+    return;
+  }
+
+  const closingGeneration = ++inappGeneration;
+  clearTimeout(inappHideTimer);
+
+  const finishClosing = () => {
+    if (inappGeneration !== closingGeneration) return;
+    panel.style.display = 'none';
+    panel.classList.remove('hiding');
+    panel.setAttribute('aria-hidden', 'true');
+    inappHideTimer = null;
+  };
+
+  panel.addEventListener('animationend', finishClosing, { once: true });
   panel.classList.add('hiding');
-  setTimeout(() => { panel.style.display = 'none'; panel.classList.remove('hiding'); }, 300);
+  // Fallback para animações reduzidas, pausadas ou interrompidas pelo Windows.
+  inappHideTimer = setTimeout(finishClosing, 400);
   inappCurrentId = null;
 }
 
@@ -869,7 +1030,7 @@ async function inappMarkDone() {
   closeInAppNotif();
 }
 
-function inappSnooze() {
+async function inappSnooze() {
   // Salva referências ANTES de fechar (closeInAppNotif limpa inappCurrentId)
   const savedId = inappCurrentId;
   const r = reminders.find(x => x.id === savedId);
@@ -880,6 +1041,18 @@ function inappSnooze() {
 
   // Protege o lembrete do auto-check durante o snooze
   snoozedIds.add(r.id);
+
+  if (IS_DESKTOP_APP) {
+    try {
+      await window.nexoDesktop.snoozeReminder(r, currentUser?.id, delay);
+      showToast('⏰ Adiado por 10 minutos', r.title);
+    } catch (error) {
+      snoozedIds.delete(r.id);
+      console.error('Erro ao adiar lembrete no desktop:', error);
+      showToast('Erro', 'Não foi possível adiar o lembrete.');
+    }
+    return;
+  }
 
   setTimeout(() => {
     snoozedIds.delete(r.id); // libera proteção
@@ -951,6 +1124,14 @@ async function scheduleNextOccurrence(r, status = 'fired') {
 }
 
 function clearNotifTimers(id) {
+  if (IS_DESKTOP_APP) {
+    if (currentUser?.id) {
+      window.nexoDesktop.removeReminder(id, currentUser.id)
+        .catch(error => console.error('Erro ao cancelar alerta desktop:', error));
+    }
+    return;
+  }
+
   if (notifTimers[id]) {
     notifTimers[id].forEach(t => clearTimeout(t));
     delete notifTimers[id];
@@ -977,6 +1158,14 @@ function fireAlert(r, label) {
 }
 
 function scheduleNotification(r) {
+  if (IS_DESKTOP_APP) {
+    if (currentUser?.id) {
+      window.nexoDesktop.upsertReminder(r, currentUser.id)
+        .catch(error => console.error('Erro ao agendar alerta desktop:', error));
+    }
+    return;
+  }
+
   // Sempre limpa timers antigos primeiro — evita duplicar notificação ao editar
   clearNotifTimers(r.id);
 
@@ -1038,22 +1227,75 @@ function playSound(type, repeat = 3) {
   } catch(e) {}
 }
 
-function playCustomSound(type, repeat = 3) {
-  const url = type.split('|')[1];
-  if (!url) return;
+async function playCustomSound(type, repeat = 3) {
+  let url;
+  try {
+    url = await prepareCustomSound(type);
+  } catch (error) {
+    console.error('Erro ao preparar som personalizado:', error);
+    playSound('padrão', 1);
+    return false;
+  }
 
-  let playCount = 0;
-  const play = () => {
-    if (playCount >= repeat) return;
-    playCount++;
+  if (!url) {
+    playSound('padrão', 1);
+    return false;
+  }
+
+  for (let playCount = 0; playCount < repeat; playCount++) {
     const audio = new Audio(url);
+    audio.preload = 'auto';
     audio.volume = 0.8;
-    audio.addEventListener('ended', () => {
-      if (playCount < repeat) setTimeout(play, 300);
+
+    let settled = false;
+    let playbackError = null;
+    let timeout;
+    let finishPlayback;
+    const finished = new Promise(resolve => {
+      finishPlayback = error => {
+        if (settled) return;
+        settled = true;
+        playbackError = error;
+        clearTimeout(timeout);
+        audio.removeEventListener('ended', onEnded);
+        audio.removeEventListener('error', onError);
+        resolve();
+      };
     });
-    audio.play().catch(e => console.error('Erro ao tocar som personalizado:', e));
-  };
-  play();
+    const onEnded = () => finishPlayback(null);
+    const onError = () => finishPlayback(audio.error || new Error('Falha ao decodificar o áudio.'));
+    audio.addEventListener('ended', onEnded);
+    audio.addEventListener('error', onError);
+    timeout = setTimeout(
+      () => finishPlayback(new Error('O áudio ultrapassou o tempo máximo de reprodução.')),
+      60_000
+    );
+
+    let startTimer;
+    try {
+      await Promise.race([
+        audio.play(),
+        new Promise((_, reject) => {
+          startTimer = setTimeout(() => reject(new Error('O áudio demorou para iniciar.')), 10_000);
+        }),
+      ]);
+      clearTimeout(startTimer);
+      await finished;
+      if (playbackError) throw playbackError;
+      if (playCount + 1 < repeat) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    } catch (error) {
+      clearTimeout(startTimer);
+      audio.pause();
+      finishPlayback(null);
+      console.error('Erro ao tocar som personalizado:', error);
+      playSound('padrão', 1);
+      return false;
+    }
+  }
+
+  return true;
 }
 
 // =====================================================
@@ -1110,6 +1352,50 @@ function closeUndoToast() {
 
 // Init SW ao carregar
 registerSW();
+
+// O scheduler Rust exibe a notificação nativa e informa a WebView para manter
+// painel, som e recorrência sincronizados enquanto o processo está em execução.
+async function handleDesktopReminderFired(payload, queueIfMissing = true) {
+  const r = reminders.find(item => item.id === payload.reminderId);
+  if (!r) {
+    let audioHandled = Boolean(payload.audioHandled || payload.nativeSound);
+    if (!audioHandled) {
+      void playSound(payload.sound || 'padrão');
+      audioHandled = true;
+    }
+    if (queueIfMissing) pendingDesktopReminderEvents.push({ ...payload, audioHandled });
+    return;
+  }
+
+  const isAdvance = payload.kind === 'advance';
+  const body = isAdvance
+    ? `⏰ Alerta antecipado: ${r.desc || r.title}`
+    : r.desc || 'Hora do seu lembrete!';
+
+  showInAppNotif(r.id, r.title, body);
+  if (!payload.audioHandled && !payload.nativeSound) {
+    void playSound(payload.sound || r.sound);
+  }
+
+  if (!isAdvance) {
+    snoozedIds.delete(r.id);
+    if (r.repeat !== 'none') {
+      await scheduleNextOccurrence(r, 'fired');
+    }
+  }
+}
+
+async function processPendingDesktopReminderEvents() {
+  if (!IS_DESKTOP_APP || pendingDesktopReminderEvents.length === 0) return;
+  const pending = pendingDesktopReminderEvents.splice(0);
+  for (const payload of pending) {
+    await handleDesktopReminderFired(payload, false);
+  }
+}
+
+document.addEventListener('nexo:desktop-reminder-fired', async event => {
+  await handleDesktopReminderFired(event.detail || {});
+});
 
 // =====================================================
 //  REMINDER LOGS — histórico de disparos

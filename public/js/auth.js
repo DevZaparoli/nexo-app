@@ -4,6 +4,18 @@
 
 let currentUser = null;
 let appInitialized = false; // evita showApp() duplo na inicialização
+const DESKTOP_OAUTH_CALLBACK = 'nexo://auth/callback';
+const desktopOAuthInFlight = new Set();
+const desktopOAuthCompleted = new Set();
+let googleOAuthPending = false;
+let resolveAuthListenerReady;
+const authListenerReady = new Promise(resolve => { resolveAuthListenerReady = resolve; });
+
+document.addEventListener('nexo:oauth-callback', event => {
+  handleDesktopOAuthCallback(event.detail?.url).catch(error => {
+    console.error('Erro no retorno do Google:', error);
+  });
+});
 
 // --------------------------------------------------
 //  INICIALIZAÇÃO — lê sessão do localStorage primeiro
@@ -63,39 +75,57 @@ const bootSafetyTimeout = setTimeout(() => {
   }
 
   // Agora sim escuta mudanças futuras (login, logout, refresh)
-  sb.auth.onAuthStateChange(async (event, session) => {
-    // Ignora o SIGNED_IN que o Supabase dispara durante a própria inicialização
-    // (já tratado no bloco acima) — só processa eventos pós-boot
-    if (event === 'SIGNED_IN' && session?.user) {
-      currentUser = session.user;
-      if (!appInitialized) return; // evita showApp() duplicado no boot
-      await showApp();
+  sb.auth.onAuthStateChange((event, session) => {
+    // O callback precisa retornar imediatamente. Consultas ao Supabase feitas por
+    // showApp() dentro dele bloqueiam exchangeCodeForSession() e prendem o loading.
+    setTimeout(async () => {
+      try {
+        // Ignora o SIGNED_IN que o Supabase dispara durante a própria inicialização
+        // (já tratado no bloco acima) — só processa eventos pós-boot
+        if (event === 'SIGNED_IN' && session?.user) {
+          currentUser = session.user;
+          if (!appInitialized) return; // evita showApp() duplicado no boot
+          await showApp();
 
-      // Primeiro login com Google → abre painel de senha
-      const provider  = currentUser.app_metadata?.provider || '';
-      const createdAt = new Date(currentUser.created_at).getTime();
-      const isNew     = (Date.now() - createdAt) < 30000;
-      const hasPass   = currentUser.identities?.some(i => i.provider === 'email');
-      if (provider === 'google' && isNew && !hasPass) {
-        openCompleteProfileModal();
+          // Primeiro login com Google → abre painel de senha
+          const provider  = currentUser.app_metadata?.provider || '';
+          const createdAt = new Date(currentUser.created_at).getTime();
+          const isNew     = (Date.now() - createdAt) < 30000;
+          const hasPass   = currentUser.identities?.some(i => i.provider === 'email');
+          if (provider === 'google' && isNew && !hasPass) {
+            openCompleteProfileModal();
+          }
+        }
+
+        if (event === 'PASSWORD_RECOVERY') {
+          showAuth();
+          openResetPasswordModal();
+        }
+
+        if (event === 'SIGNED_OUT') {
+          currentUser = null;
+          showAuth();
+        }
+
+        // TOKEN_REFRESHED — atualiza currentUser silenciosamente
+        if (event === 'TOKEN_REFRESHED' && session?.user) {
+          currentUser = session.user;
+        }
+      } catch (error) {
+        console.error('Erro ao processar mudança de autenticação:', error);
+        setGoogleOAuthPending(false);
+        hideLoadingScreen();
+        if (!currentUser) showAuth();
       }
-    }
-
-    if (event === 'PASSWORD_RECOVERY') {
-      showAuth();
-      openResetPasswordModal();
-    }
-
-    if (event === 'SIGNED_OUT') {
-      currentUser = null;
-      showAuth();
-    }
-
-    // TOKEN_REFRESHED — atualiza currentUser silenciosamente
-    if (event === 'TOKEN_REFRESHED' && session?.user) {
-      currentUser = session.user;
-    }
+    }, 0);
   });
+
+  resolveAuthListenerReady();
+  if (window.nexoDesktop?.available) {
+    window.nexoDesktop.relayOAuthCallbacks().catch(error => {
+      console.error('Erro ao recuperar retorno pendente do Google:', error);
+    });
+  }
 })();
 
 // --------------------------------------------------
@@ -175,7 +205,99 @@ async function registerEmail() {
 // --------------------------------------------------
 //  Login com Google
 // --------------------------------------------------
+function setGoogleOAuthPending(pending) {
+  googleOAuthPending = pending;
+  const button = document.getElementById('google-login-btn');
+  if (!button) return;
+
+  if (!button.dataset.originalHtml) button.dataset.originalHtml = button.innerHTML;
+  button.disabled = pending;
+  button.innerHTML = pending
+    ? '<span>Aguardando o Google...</span>'
+    : button.dataset.originalHtml;
+}
+
+async function handleDesktopOAuthCallback(rawUrl) {
+  if (!window.nexoDesktop?.available || !rawUrl) return;
+  if (desktopOAuthCompleted.has(rawUrl) || desktopOAuthInFlight.has(rawUrl)) return;
+
+  let callback;
+  try {
+    callback = new URL(rawUrl);
+  } catch {
+    return;
+  }
+
+  if (callback.protocol !== 'nexo:' || callback.hostname !== 'auth' || callback.pathname !== '/callback') {
+    return;
+  }
+
+  desktopOAuthInFlight.add(rawUrl);
+  await authListenerReady;
+  showLoadingScreen();
+
+  try {
+    const hashParams = new URLSearchParams(callback.hash.replace(/^#/, ''));
+    const oauthError = callback.searchParams.get('error_description')
+      || hashParams.get('error_description')
+      || callback.searchParams.get('error')
+      || hashParams.get('error');
+
+    if (oauthError) throw new Error(oauthError);
+
+    const code = callback.searchParams.get('code');
+    if (!code) throw new Error('O Google não retornou um código de autenticação.');
+
+    const flowId = callback.searchParams.get('sb_flow_id');
+    const { error } = await sb.auth.exchangeCodeForSession(
+      code,
+      flowId ? { flowId } : undefined
+    );
+    if (error) throw error;
+
+    desktopOAuthCompleted.add(rawUrl);
+  } catch (error) {
+    showAuth();
+    showAuthError('Não foi possível concluir o login com Google: ' + translateError(error.message));
+  } finally {
+    desktopOAuthInFlight.delete(rawUrl);
+    setGoogleOAuthPending(false);
+    hideLoadingScreen();
+  }
+}
+
 async function loginGoogle() {
+  if (window.nexoDesktop?.available) {
+    if (googleOAuthPending) {
+      return showAuthError('Conclua o login na janela do navegador que já foi aberta.', 'warning');
+    }
+
+    setGoogleOAuthPending(true);
+    hideAuthError();
+    try {
+      const { data, error } = await sb.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: DESKTOP_OAUTH_CALLBACK,
+          skipBrowserRedirect: true,
+          queryParams: { prompt: 'select_account' },
+        }
+      });
+      if (error) throw error;
+      if (!data?.url) throw new Error('O Supabase não forneceu a URL de autenticação.');
+
+      await window.nexoDesktop.openOAuthUrl(data.url);
+      showAuthError('Seu navegador foi aberto. Entre com o Google para voltar automaticamente ao Nexo.', 'success');
+
+      setTimeout(() => {
+        if (googleOAuthPending) setGoogleOAuthPending(false);
+      }, 5 * 60 * 1000);
+      return;
+    } catch (error) {
+      setGoogleOAuthPending(false);
+      return showAuthError('Não foi possível abrir o Google: ' + translateError(error.message));
+    }
+  }
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: window.location.origin }
@@ -242,6 +364,8 @@ function showResetError(msg) {
 //  Logout
 // --------------------------------------------------
 async function logout() {
+  const signingOutUserId = currentUser?.id;
+
   // Confirma delete pendente (undo) antes de deslogar
   if (typeof undoState !== 'undefined' && undoState) {
     clearTimeout(undoState.timer);
@@ -257,6 +381,14 @@ async function logout() {
     clearInterval(autoCheckInterval);
   }
   reminders = [];
+
+  if (window.nexoDesktop?.available && signingOutUserId) {
+    try {
+      await window.nexoDesktop.clearReminders(signingOutUserId);
+    } catch (error) {
+      console.error('Erro ao limpar agenda desktop:', error);
+    }
+  }
 
   await sb.auth.signOut();
   closeProfileModal();
@@ -278,18 +410,15 @@ async function showApp() {
   const name     = meta.full_name || meta.name || currentUser.email.split('@')[0];
   const email    = currentUser.email;
   const provider = currentUser.app_metadata?.provider || '';
-  const badge    = provider === 'google'
-    ? '<span style="font-size:10px;background:#4285F420;color:#4285F4;padding:2px 7px;border-radius:20px;margin-left:6px">Google</span>'
-    : '';
 
   applyAvatar(document.getElementById('user-avatar'), name, meta.avatar_url);
-  document.getElementById('user-name').innerHTML        = name + badge;
+  renderUserName(document.getElementById('user-name'), name, provider);
   document.getElementById('user-email').textContent     = email;
   document.getElementById('profile-email').textContent  = email;
 
   restoreSidebarState();
   await loadReminders();
-  checkPermBanner();
+  await checkPermBanner();
 }
 
 // --------------------------------------------------
@@ -298,11 +427,36 @@ async function showApp() {
 function applyAvatar(el, name, avatarUrl) {
   if (!el) return;
   const initials = (name || '?').slice(0, 2).toUpperCase();
+  el.replaceChildren();
+
   if (avatarUrl) {
-    el.innerHTML = `<img src="${avatarUrl}" alt="Foto de perfil" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
-  } else {
-    el.textContent = initials;
+    try {
+      const safeUrl = new URL(avatarUrl, window.location.origin);
+      if (safeUrl.protocol === 'https:' || safeUrl.origin === window.location.origin) {
+        const image = document.createElement('img');
+        image.src = safeUrl.href;
+        image.alt = 'Foto de perfil';
+        image.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
+        el.appendChild(image);
+        return;
+      }
+    } catch (error) {
+      console.warn('URL de avatar inválida:', error);
+    }
   }
+
+  el.textContent = initials;
+}
+
+function renderUserName(el, name, provider) {
+  if (!el) return;
+  el.replaceChildren(document.createTextNode(name));
+  if (provider !== 'google') return;
+
+  const badge = document.createElement('span');
+  badge.textContent = 'Google';
+  badge.style.cssText = 'font-size:10px;background:#4285F420;color:#4285F4;padding:2px 7px;border-radius:20px;margin-left:6px';
+  el.appendChild(badge);
 }
 
 // --------------------------------------------------
@@ -321,9 +475,8 @@ function openCompleteProfileModal() {
 }
 
 async function skipCompleteProfile() {
-  await sb.auth.updateUser({ password: 'mudar123' });
   document.getElementById('complete-profile-modal').classList.remove('show');
-  showToast('⚠️ Lembrete de segurança', 'Sua senha padrão é mudar123. Troque assim que possível!');
+  showToast('Conta conectada', 'Você continuará entrando com sua conta Google.');
 }
 
 async function saveCompleteProfile() {
@@ -507,10 +660,7 @@ async function saveProfileName() {
   // Atualiza UI imediatamente
   currentUser.user_metadata = { ...currentUser.user_metadata, full_name: name };
   const provider = currentUser.app_metadata?.provider || '';
-  const badge = provider === 'google'
-    ? '<span style="font-size:10px;background:#4285F420;color:#4285F4;padding:2px 7px;border-radius:20px;margin-left:6px">Google</span>'
-    : '';
-  document.getElementById('user-name').innerHTML = name + badge;
+  renderUserName(document.getElementById('user-name'), name, provider);
   applyAvatar(document.getElementById('profile-avatar'), name, currentUser.user_metadata.avatar_url);
   applyAvatar(document.getElementById('user-avatar'), name, currentUser.user_metadata.avatar_url);
 
