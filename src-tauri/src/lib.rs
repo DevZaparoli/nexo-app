@@ -84,6 +84,7 @@ struct ReminderFiredPayload {
 #[serde(rename_all = "camelCase")]
 struct SchedulerStatus {
     pending_jobs: i64,
+    enabled: bool,
     database_path: String,
 }
 
@@ -118,7 +119,13 @@ fn initialize_database(path: &Path) -> Result<(), String> {
              CREATE INDEX IF NOT EXISTS idx_notification_jobs_due
                ON notification_jobs(state, fire_at);
              CREATE INDEX IF NOT EXISTS idx_notification_jobs_user
-               ON notification_jobs(user_id, reminder_id);",
+               ON notification_jobs(user_id, reminder_id);
+             CREATE TABLE IF NOT EXISTS app_settings (
+               key TEXT PRIMARY KEY,
+               value TEXT NOT NULL
+             );
+             INSERT OR IGNORE INTO app_settings (key, value)
+               VALUES ('scheduler_enabled', '1');",
         )
         .map_err(|error| error.to_string())?;
 
@@ -143,6 +150,17 @@ fn initialize_database(path: &Path) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn scheduler_is_enabled(connection: &Connection) -> Result<bool, String> {
+    let value: String = connection
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = 'scheduler_enabled'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(value == "1")
 }
 
 fn insert_job(
@@ -221,12 +239,14 @@ fn sync_reminders(request: SyncRequest, state: State<'_, SchedulerState>) -> Res
         )
         .map_err(|error| error.to_string())?;
 
-    for reminder in request
-        .reminders
-        .iter()
-        .filter(|reminder| reminder.user_id == request.user_id)
-    {
-        insert_reminder_jobs(&transaction, reminder)?;
+    if scheduler_is_enabled(&transaction)? {
+        for reminder in request
+            .reminders
+            .iter()
+            .filter(|reminder| reminder.user_id == request.user_id)
+        {
+            insert_reminder_jobs(&transaction, reminder)?;
+        }
     }
 
     transaction
@@ -256,7 +276,9 @@ fn upsert_reminder(
             params![reminder.id, reminder.user_id],
         )
         .map_err(|error| error.to_string())?;
-    insert_reminder_jobs(&transaction, &reminder)?;
+    if scheduler_is_enabled(&transaction)? {
+        insert_reminder_jobs(&transaction, &reminder)?;
+    }
     transaction.commit().map_err(|error| error.to_string())
 }
 
@@ -291,6 +313,7 @@ fn clear_reminders(user_id: String, state: State<'_, SchedulerState>) -> Result<
 #[tauri::command]
 fn scheduler_status(state: State<'_, SchedulerState>) -> Result<SchedulerStatus, String> {
     let connection = open_database(&state.database_path)?;
+    let enabled = scheduler_is_enabled(&connection)?;
     let pending_jobs = connection
         .query_row(
             "SELECT COUNT(*) FROM notification_jobs WHERE state = 'pending'",
@@ -301,8 +324,34 @@ fn scheduler_status(state: State<'_, SchedulerState>) -> Result<SchedulerStatus,
 
     Ok(SchedulerStatus {
         pending_jobs,
+        enabled,
         database_path: state.database_path.display().to_string(),
     })
+}
+
+#[tauri::command]
+fn set_scheduler_enabled(enabled: bool, state: State<'_, SchedulerState>) -> Result<(), String> {
+    let mut connection = open_database(&state.database_path)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+
+    transaction
+        .execute(
+            "INSERT INTO app_settings (key, value)
+             VALUES ('scheduler_enabled', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![if enabled { "1" } else { "0" }],
+        )
+        .map_err(|error| error.to_string())?;
+
+    if !enabled {
+        transaction
+            .execute("DELETE FROM notification_jobs WHERE state = 'pending'", [])
+            .map_err(|error| error.to_string())?;
+    }
+
+    transaction.commit().map_err(|error| error.to_string())
 }
 
 fn read_due_jobs(connection: &Connection, now: i64) -> Result<Vec<NotificationJob>, String> {
@@ -369,6 +418,9 @@ fn send_test_notification(app: AppHandle) -> Result<(), String> {
 fn dispatch_due_jobs(app: &AppHandle, database_path: &Path) -> Result<(), String> {
     let now = Utc::now().timestamp_millis();
     let connection = open_database(database_path)?;
+    if !scheduler_is_enabled(&connection)? {
+        return Ok(());
+    }
     let jobs = read_due_jobs(&connection, now)?;
 
     for job in jobs {
@@ -599,6 +651,7 @@ pub fn run() {
             remove_reminder,
             clear_reminders,
             scheduler_status,
+            set_scheduler_enabled,
             send_test_notification,
             take_oauth_callbacks,
             open_oauth_url

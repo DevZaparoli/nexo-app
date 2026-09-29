@@ -292,6 +292,14 @@
       <!-- Configurações exclusivas do aplicativo desktop -->
       <div id="desktop-settings" style="display:none;border-top:1px solid var(--border);padding-top:16px;margin-top:8px;margin-bottom:16px">
         <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.04em">Aplicativo desktop</div>
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--border)">
+          <input type="checkbox" id="desktop-enabled-toggle" style="margin-top:3px">
+          <span>
+            <span style="display:block;font-size:13px;font-weight:600;color:var(--text1)">Nexo ativo</span>
+            <span id="desktop-enabled-status" style="display:block;font-size:11px;color:var(--text3);line-height:1.5;margin-top:3px">Consultando estado...</span>
+            <span style="display:block;font-size:11px;color:var(--text3);line-height:1.5;margin-top:3px">Ao reativar, lembretes repetitivos sem término reiniciam a contagem a partir do dia da ativação.</span>
+          </span>
+        </label>
         <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
           <input type="checkbox" id="desktop-autostart-toggle" style="margin-top:3px">
           <span>

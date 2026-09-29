@@ -17,6 +17,7 @@
       clearReminders: unavailableResult,
       snoozeReminder: unavailableResult,
       schedulerStatus: unavailableResult,
+      setSchedulerEnabled: unavailableResult,
       sendTestNotification: unavailableResult,
       getNotificationPermission: unavailableResult,
       openOAuthUrl: unavailableResult,
@@ -95,6 +96,10 @@
     return invoke('scheduler_status');
   }
 
+  async function setSchedulerEnabled(enabled) {
+    return invoke('set_scheduler_enabled', { enabled: Boolean(enabled) });
+  }
+
   async function sendTestNotification() {
     return invoke('send_test_notification');
   }
@@ -127,11 +132,87 @@
     const panel = document.getElementById('desktop-settings');
     const toggle = document.getElementById('desktop-autostart-toggle');
     const status = document.getElementById('desktop-autostart-status');
+    const enabledToggle = document.getElementById('desktop-enabled-toggle');
+    const enabledStatus = document.getElementById('desktop-enabled-status');
     const notificationButton = document.getElementById('desktop-test-notification-btn');
     const notificationStatus = document.getElementById('desktop-notification-status');
-    if (!panel || !toggle || !status) return;
+    if (!panel || !toggle || !status || !enabledToggle || !enabledStatus) return;
 
     panel.style.display = 'block';
+    let initialScheduler = null;
+    try {
+      initialScheduler = await schedulerStatus();
+      enabledToggle.checked = initialScheduler?.enabled !== false;
+      enabledStatus.textContent = enabledToggle.checked
+        ? 'Os lembretes estão ativos neste computador.'
+        : 'O Nexo está pausado e não emitirá lembretes.';
+      document.documentElement.classList.toggle('nexo-paused', !enabledToggle.checked);
+    } catch (error) {
+      console.error('Não foi possível consultar o estado do Nexo:', error);
+      enabledToggle.disabled = true;
+      enabledStatus.textContent = 'Não foi possível consultar esta configuração.';
+    }
+
+    enabledToggle.addEventListener('change', async () => {
+      const shouldEnable = enabledToggle.checked;
+      let stateChanged = false;
+      enabledToggle.disabled = true;
+      enabledStatus.textContent = shouldEnable
+        ? 'Reprogramando lembretes a partir de hoje...'
+        : 'Pausando todos os lembretes...';
+
+      try {
+        let resetCount = 0;
+        if (shouldEnable) {
+          if (typeof window.resumeNexoFromToday !== 'function') {
+            throw new Error('O fluxo de reativação ainda não está disponível.');
+          }
+          resetCount = await window.resumeNexoFromToday();
+          await setSchedulerEnabled(true);
+          stateChanged = true;
+          if (typeof window.refreshNexoScheduler === 'function') {
+            await window.refreshNexoScheduler();
+          }
+        } else {
+          await setSchedulerEnabled(false);
+          stateChanged = true;
+        }
+
+        document.documentElement.classList.toggle('nexo-paused', !shouldEnable);
+        enabledStatus.textContent = shouldEnable
+          ? `Nexo ativo. ${resetCount} lembrete(s) sem término reiniciado(s) a partir de hoje.`
+          : 'Nexo pausado. Nenhum lembrete será emitido até você ativá-lo novamente.';
+        if (notificationStatus) {
+          const scheduler = await schedulerStatus();
+          notificationStatus.textContent = `${Number(scheduler?.pendingJobs) || 0} alerta(s) agendado(s) neste computador.`;
+        }
+        if (typeof window.showToast === 'function') {
+          window.showToast(
+            shouldEnable ? 'Nexo ativado' : 'Nexo pausado',
+            shouldEnable
+              ? 'As repetições sem término agora contam a partir de hoje.'
+              : 'Os lembretes permanecerão desligados até você reativar o Nexo.',
+          );
+        }
+      } catch (error) {
+        console.error('Erro ao alterar o estado do Nexo:', error);
+        if (stateChanged) {
+          try {
+            await setSchedulerEnabled(!shouldEnable);
+            if (!shouldEnable && typeof window.refreshNexoScheduler === 'function') {
+              await window.refreshNexoScheduler();
+            }
+          } catch (rollbackError) {
+            console.error('Erro ao restaurar o estado anterior do Nexo:', rollbackError);
+          }
+        }
+        enabledToggle.checked = !shouldEnable;
+        enabledStatus.textContent = 'Não foi possível salvar esta configuração.';
+      } finally {
+        enabledToggle.disabled = false;
+      }
+    });
+
     try {
       toggle.checked = await autostart.isEnabled();
       status.textContent = toggle.checked
@@ -162,7 +243,7 @@
 
     if (notificationButton && notificationStatus) {
       try {
-        const scheduler = await schedulerStatus();
+        const scheduler = initialScheduler || await schedulerStatus();
         const count = Number(scheduler?.pendingJobs) || 0;
         notificationStatus.textContent = `${count} alerta(s) agendado(s) neste computador.`;
       } catch (error) {
@@ -193,6 +274,7 @@
     clearReminders,
     snoozeReminder,
     schedulerStatus,
+    setSchedulerEnabled,
     sendTestNotification,
     getNotificationPermission,
     requestNotificationPermission,

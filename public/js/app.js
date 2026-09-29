@@ -137,6 +137,97 @@ function localTimeStr(d) {
   return `${h}:${min}`;
 }
 
+function getReactivatedOccurrenceDate(r, activatedAt = new Date()) {
+  if (!r?.time || r.repeat === 'none' || r.repeatEnd) return null;
+
+  const [hour, minute] = r.time.split(':').map(Number);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+
+  const atOriginalTime = (date) => {
+    const result = new Date(date);
+    result.setHours(hour, minute, 0, 0);
+    return result;
+  };
+
+  if (r.repeat === 'daily') {
+    const next = atOriginalTime(activatedAt);
+    if (next <= activatedAt) next.setDate(next.getDate() + 1);
+    return next;
+  }
+
+  if (r.repeat === 'weekly') {
+    const weekdays = (r.weekdays || []).map(Number).filter(day => day >= 0 && day <= 6);
+    if (weekdays.length) {
+      for (let offset = 0; offset <= 7; offset++) {
+        const candidate = atOriginalTime(activatedAt);
+        candidate.setDate(candidate.getDate() + offset);
+        if (weekdays.includes(candidate.getDay()) && candidate > activatedAt) return candidate;
+      }
+      return null;
+    }
+
+    const next = atOriginalTime(activatedAt);
+    if (next <= activatedAt) next.setDate(next.getDate() + 7);
+    return next;
+  }
+
+  if (r.repeat === 'monthly') {
+    const activationDay = activatedAt.getDate();
+    let year = activatedAt.getFullYear();
+    let month = activatedAt.getMonth();
+    let day = Math.min(activationDay, new Date(year, month + 1, 0).getDate());
+    let next = new Date(year, month, day, hour, minute, 0, 0);
+
+    if (next <= activatedAt) {
+      month += 1;
+      year += Math.floor(month / 12);
+      month %= 12;
+      day = Math.min(activationDay, new Date(year, month + 1, 0).getDate());
+      next = new Date(year, month, day, hour, minute, 0, 0);
+    }
+    return next;
+  }
+
+  return null;
+}
+
+async function resumeNexoFromToday(activatedAt = new Date()) {
+  if (!currentUser?.id) throw new Error('Entre na sua conta antes de ativar o Nexo.');
+
+  const rebased = reminders
+    .filter(r => r.repeat !== 'none' && !r.repeatEnd)
+    .map(r => {
+      const next = getReactivatedOccurrenceDate(r, activatedAt);
+      if (!next) return null;
+      return {
+        ...r,
+        date: localDateStr(next),
+        time: localTimeStr(next),
+        done: false,
+      };
+    })
+    .filter(Boolean);
+
+  if (!rebased.length) return 0;
+
+  const rows = rebased.map(reminder => ({
+    id: reminder.id,
+    ...localToDb(reminder),
+  }));
+  const { error } = await sb
+    .from('reminders')
+    .upsert(rows, { onConflict: 'id' });
+
+  if (error) throw error;
+
+  const byId = new Map(rebased.map(reminder => [reminder.id, reminder]));
+  reminders = reminders.map(reminder => byId.get(reminder.id) || reminder);
+  renderList();
+  return rebased.length;
+}
+
+window.resumeNexoFromToday = resumeNexoFromToday;
+
 function localToDb(r) {
   // Constrói a data no fuso local (evita conversão automática para UTC)
   let dt = null;
@@ -961,6 +1052,8 @@ async function scheduleAllNotifications() {
   }
   reminders.forEach(r => scheduleNotification(r));
 }
+
+window.refreshNexoScheduler = scheduleAllNotifications;
 
 // =====================================================
 //  IN-APP NOTIFICATION — garante entrega em qualquer máquina
