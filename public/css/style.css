@@ -491,10 +491,11 @@ textarea.form-input { resize: vertical; font-family: var(--font-body); }
 .reminder-card.done .reminder-title { text-decoration: line-through; }
 
 .check-btn {
-  width: 19px; height: 19px; border-radius: 50%;
+  width: 32px; height: 32px; border-radius: 50%;
   border: 1.5px solid var(--ink-4); background: transparent;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: all .18s var(--ease); flex-shrink: 0; margin-top: 2px; padding: 0;
+  transition: all .18s var(--ease); flex-shrink: 0; margin-top: 0; padding: 0;
+  touch-action: manipulation;
 }
 .check-btn:hover { border-color: var(--signal); }
 .check-btn.checked { background: var(--signal); border-color: var(--signal); animation: checkPop .3s var(--ease); }
@@ -527,16 +528,17 @@ textarea.form-input { resize: vertical; font-family: var(--font-body); }
 }
 .repeat-tag i { font-size: 12px; }
 
-.reminder-actions { display: flex; gap: 2px; margin-left: auto; flex-shrink: 0; opacity: 0; transition: opacity .18s var(--ease); }
+.reminder-actions { display: flex; gap: 6px; margin-left: auto; flex-shrink: 0; opacity: 0; transition: opacity .18s var(--ease); }
 .reminder-card:hover .reminder-actions { opacity: 1; }
 
 .icon-btn {
-  width: 30px; height: 30px; border-radius: var(--radius-xs);
-  background: transparent; border: none; cursor: pointer; color: var(--paper-2);
-  display: flex; align-items: center; justify-content: center; font-size: 15px;
+  width: 36px; height: 36px; border-radius: var(--radius-xs);
+  background: var(--ink-2); border: 1px solid var(--line); cursor: pointer; color: var(--paper-1);
+  display: flex; align-items: center; justify-content: center; font-size: 17px;
   transition: all .15s var(--ease);
+  touch-action: manipulation;
 }
-.icon-btn:hover { background: var(--ink-3); color: var(--paper-0); }
+.icon-btn:hover { background: var(--ink-3); border-color: var(--ink-4); color: var(--paper-0); }
 .icon-btn.danger:hover { background: rgba(255,138,128,0.12); color: var(--err); }
 
 /* =====================================================
@@ -668,6 +670,35 @@ textarea.form-input { resize: vertical; font-family: var(--font-body); }
 #inapp-notif { animation: slideInTop .4s var(--ease); }
 #inapp-notif.hiding { animation: slideOutTop .3s var(--ease) forwards; pointer-events: none; }
 
+.inapp-notif {
+  position: fixed; top: 20px; right: 20px; z-index: 999; width: 340px;
+}
+.inapp-notif-card {
+  background: var(--ink-1); border: 1px solid var(--line); border-left: 4px solid var(--signal);
+  border-radius: var(--radius); box-shadow: 0 16px 40px rgba(0,0,0,.72); overflow: hidden;
+}
+.inapp-notif-head {
+  background: var(--signal); padding: 10px 14px; display: flex; align-items: center; gap: 8px;
+}
+.inapp-notif-head-title { color: var(--ink-0); font-size: 13px; font-weight: 700; flex: 1; }
+.inapp-notif-close {
+  width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-xs);
+  background: rgba(10,10,11,.16); color: var(--ink-0); cursor: pointer; font-size: 20px; line-height: 1;
+}
+.inapp-notif-body { padding: 16px; background: var(--ink-1); }
+.inapp-notif-title { font-size: 14px; font-weight: 700; color: var(--paper-0); margin-bottom: 4px; }
+.inapp-notif-message { font-size: 12px; color: var(--paper-1); margin-bottom: 14px; }
+.inapp-notif-actions { display: flex; gap: 8px; }
+.inapp-notif-actions button {
+  min-height: 36px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600;
+  cursor: pointer; touch-action: manipulation;
+}
+.inapp-notif-done { flex: 1; padding: 7px; background: var(--ok); color: var(--ink-0); border: 0; }
+.inapp-notif-snooze { flex: 1; padding: 7px; background: var(--ink-3); color: var(--paper-0); border: 1px solid var(--line); }
+.inapp-notif-dismiss { width: 36px; padding: 0; background: transparent; color: var(--paper-1); border: 1px solid var(--line); }
+.inapp-notif-progress-track { height: 3px; background: var(--ink-3); }
+.inapp-notif-progress { height: 100%; background: var(--signal); width: 100%; transition: width linear; }
+
 /* =====================================================
    MISC
    ===================================================== */
@@ -747,12 +778,25 @@ textarea.form-input { resize: vertical; font-family: var(--font-body); }
   .perm-btn { width: 100%; margin: 0; padding: 8px 12px; }
   .filter-row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
   .filter-chip { flex-shrink: 0; }
-  .reminder-card { padding: 13px 12px; gap: 10px; flex-wrap: wrap; }
-  .reminder-actions { width: 100%; margin-left: 29px; justify-content: flex-end; }
+  .reminder-card {
+    padding: 13px 12px; gap: 10px; display: grid;
+    grid-template-columns: 40px minmax(0, 1fr); grid-template-areas: 'check body' '. actions';
+  }
+  .check-btn { grid-area: check; width: 40px; height: 40px; border-width: 2px; }
+  .reminder-body { grid-area: body; min-width: 0; }
+  .reminder-actions { grid-area: actions; width: auto; margin: 2px 0 0; justify-content: flex-end; gap: 8px; }
+  .reminder-actions .icon-btn { width: 42px; height: 42px; font-size: 19px; }
+  .reminder-card.done { opacity: .62; }
   .cat-badge { max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .modal { width: calc(100vw - 16px); max-width: none; padding: 20px 16px; max-height: calc(100dvh - 16px); }
   .notif-toast { left: 12px; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom)); width: auto; }
+  .inapp-notif { top: auto; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom)); left: 12px; width: auto; }
+  #inapp-notif { animation-name: slideInBottom; }
+  #inapp-notif.hiding { animation-name: slideOutBottom; }
 }
+
+@keyframes slideInBottom { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes slideOutBottom { from { transform: translateY(0); opacity: 1; } to { transform: translateY(20px); opacity: 0; } }
 
 
 /* =====================================================

@@ -15,6 +15,50 @@ let swReg         = null;
 let autoCheckInterval = null;
 const IS_DESKTOP_APP = window.nexoDesktop?.available === true;
 const pendingDesktopReminderEvents = [];
+let reminderAudioContext = null;
+let reminderAudioUnlocked = false;
+let swMessageListenerInstalled = false;
+
+// Em navegadores móveis, o sistema só permite áudio depois de uma interação
+// real da pessoa. Mantemos um único contexto desbloqueado para os alertas.
+function getReminderAudioContext() {
+  if (reminderAudioContext) return reminderAudioContext;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  reminderAudioContext = new AudioContextClass();
+  return reminderAudioContext;
+}
+
+async function unlockReminderAudio() {
+  if (IS_DESKTOP_APP) return true;
+  const context = getReminderAudioContext();
+  if (!context) return false;
+
+  try {
+    await context.resume();
+    // Pulso inaudível: necessário para o Safari/iOS manter o contexto liberado
+    // para o toque do lembrete, mesmo quando ele ocorrer alguns minutos depois.
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    gain.gain.value = 0;
+    source.buffer = context.createBuffer(1, 1, context.sampleRate);
+    source.connect(gain).connect(context.destination);
+    source.start(0);
+    reminderAudioUnlocked = context.state === 'running';
+    return reminderAudioUnlocked;
+  } catch (error) {
+    console.warn('Não foi possível preparar o áudio dos lembretes:', error);
+    return false;
+  }
+}
+
+function installReminderAudioUnlock() {
+  if (IS_DESKTOP_APP) return;
+  const unlock = () => { void unlockReminderAudio(); };
+  document.addEventListener('pointerdown', unlock, { passive: true });
+  document.addEventListener('touchend', unlock, { passive: true });
+  document.addEventListener('keydown', unlock);
+}
 
 // =====================================================
 //  SERVICE WORKER
@@ -24,12 +68,16 @@ async function registerSW() {
   if (IS_DESKTOP_APP) return;
   if (!('serviceWorker' in navigator)) return;
   try {
-    swReg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.register('/sw.js');
+    swReg = await navigator.serviceWorker.ready;
     // Recebe mensagens do SW
-    navigator.serviceWorker.addEventListener('message', e => {
-      if (e.data?.type === 'FIRED')     autoMarkDone(e.data.id);
-      if (e.data?.type === 'MARK_DONE') toggleDone(e.data.id);
-    });
+    if (!swMessageListenerInstalled) {
+      navigator.serviceWorker.addEventListener('message', e => {
+        if (e.data?.type === 'FIRED')     autoMarkDone(e.data.id);
+        if (e.data?.type === 'MARK_DONE') toggleDone(e.data.id);
+      });
+      swMessageListenerInstalled = true;
+    }
   } catch(err) { console.warn('SW error:', err); }
 }
 
@@ -1232,22 +1280,53 @@ function clearNotifTimers(id) {
   if (swReg?.active) swReg.active.postMessage({ type: 'CANCEL', id });
 }
 
+async function showBrowserNotification(title, body, id) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+
+  const options = {
+    body,
+    icon: '/public/icons/icon-192.png',
+    badge: '/public/icons/icon-192.png',
+    tag: `reminder-${id}`,
+    requireInteraction: true,
+    renotify: true,
+    silent: false,
+    vibrate: [200, 100, 200],
+    data: { reminderId: id },
+  };
+
+  try {
+    const registration = swReg?.showNotification
+      ? swReg
+      : await navigator.serviceWorker?.ready;
+    if (registration?.showNotification) {
+      await registration.showNotification(`Nexo: ${title}`, options);
+      return true;
+    }
+  } catch (error) {
+    console.warn('Não foi possível exibir a notificação pelo service worker:', error);
+  }
+
+  try {
+    new Notification(`Nexo: ${title}`, options);
+    return true;
+  } catch (error) {
+    console.warn('Não foi possível exibir a notificação do navegador:', error);
+    return false;
+  }
+}
+
 function fireAlert(r, label) {
   const body = label
     ? `⏰ ${label}: ${r.desc || r.title}`
     : r.desc || 'Hora do seu lembrete!';
 
-  if ('Notification' in window && Notification.permission === 'granted') {
-    try {
-      new Notification('Nexo: ' + r.title, {
-        body, icon:'/public/icons/icon-192.png',
-        tag:'reminder-' + r.id + (label||''), requireInteraction: true
-      });
-    } catch(e) {}
-  }
+  // No celular, showNotification pelo service worker aciona o canal nativo
+  // do Nexo (som e vibração do aparelho), ao contrário de new Notification.
+  void showBrowserNotification(r.title, body, `${r.id}${label || ''}`);
 
   showInAppNotif(r.id, r.title, body);
-  playSound(r.sound);
+  void playSound(r.sound);
 }
 
 function scheduleNotification(r) {
@@ -1292,7 +1371,7 @@ function scheduleNotification(r) {
   if (ids.length) notifTimers[r.id] = ids;
 }
 
-function playSound(type, repeat = 3) {
+async function playSound(type, repeat = 3) {
   if (type === 'silencioso') return;
 
   // Sons personalizados — formato "custom:<id>|<url>"
@@ -1301,7 +1380,11 @@ function playSound(type, repeat = 3) {
   }
 
   try {
-    const ctx   = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = getReminderAudioContext();
+    if (!ctx) return false;
+    if (ctx.state !== 'running') await ctx.resume();
+    reminderAudioUnlocked = ctx.state === 'running';
+    if (!reminderAudioUnlocked) return false;
     const sound = SOUNDS[type] || SOUNDS['padrão'];
     // Calcula a duração de cada repetição com base no tipo
     const durations = { padrão:0.9, suave:1.1, urgente:0.8, campanha:1.1, digital:0.5, melodia:1.2, ping:0.7 };
@@ -1312,12 +1395,15 @@ function playSound(type, repeat = 3) {
       const offset = i * (dur + gap);
       setTimeout(() => {
         try {
-          const c = new (window.AudioContext || window.webkitAudioContext)();
-          sound.play(c);
+          if (ctx.state === 'running') sound.play(ctx);
         } catch(e) {}
       }, offset * 1000);
     }
-  } catch(e) {}
+    return true;
+  } catch(e) {
+    console.warn('Não foi possível tocar o som do lembrete:', e);
+    return false;
+  }
 }
 
 async function playCustomSound(type, repeat = 3) {
@@ -1444,6 +1530,7 @@ function closeUndoToast() {
 }
 
 // Init SW ao carregar
+installReminderAudioUnlock();
 registerSW();
 
 // O scheduler Rust exibe a notificação nativa e informa a WebView para manter

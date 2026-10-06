@@ -22,13 +22,16 @@ function scheduleNotif(id, title, body, delay) {
   if (timers[id]) clearTimeout(timers[id]);
   if (delay <= 0) return;
   timers[id] = setTimeout(() => {
-    self.registration.showNotification('RemindMe: ' + title, {
+    self.registration.showNotification('Nexo: ' + title, {
       body: body || 'Hora do seu lembrete!',
       icon: '/public/icons/icon-192.png',
       badge: '/public/icons/icon-192.png',
       tag: 'reminder-' + id,
       vibrate: [200, 100, 200],
+      silent: false,
+      renotify: true,
       requireInteraction: true,
+      data: { reminderId: id },
       actions: [
         { action: 'done', title: '✅ Concluir' },
         { action: 'snooze', title: '⏰ Adiar 10min' }
@@ -55,7 +58,7 @@ self.addEventListener('notificationclick', e => {
   } else if (e.action === 'snooze') {
     const tag = e.notification.tag;
     const id  = tag.replace('reminder-','');
-    scheduleNotif(id, e.notification.title.replace('RemindMe: ',''), e.notification.body, 10 * 60 * 1000);
+    scheduleNotif(id, e.notification.title.replace('Nexo: ',''), e.notification.body, 10 * 60 * 1000);
   } else {
     e.waitUntil(self.clients.openWindow('/'));
   }
